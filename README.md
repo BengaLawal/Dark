@@ -1,4 +1,4 @@
-# DarkRoom_Booth2
+# Dark
 Work in progress
 
 The picture and video buttons are the only buttons that currently works.

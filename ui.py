@@ -5,21 +5,22 @@ from PIL import Image
 import time
 import threading
 import cv2
-from watermark import Watermark
+# from watermark import Watermark
 from keyboard import Keyboard
 from mail import EmailSender
 
 
 class UserInterface(ctk.CTkFrame):
-    def __init__(self, master):
+    def __init__(self, master, login_cred):
         super().__init__(master)
         self.master = master
-        self.watermark = Watermark()
+        # self.watermark = Watermark()
         self.mail = EmailSender()
+        self.cred = login_cred
 
         self.screen_width = None
         self.screen_height = None
-        self.get_screen_size()  # gets screen_width and screen_height
+        self._get_screen_size()  # gets screen_width and screen_height
 
         self.main_frame = None
         self.pressed_button = None
@@ -64,81 +65,36 @@ class UserInterface(ctk.CTkFrame):
 
         # print(f"Screen Size: {self.screen_width}x{self.screen_height}")
 
-        # Create the main frame with 2 rows
         self.main_frame = ctk.CTkFrame(self.master, bg_color="red")
         self.main_frame.pack(expand=True, fill=ctk.BOTH)
-
-        # Divide main_frame into a 2x3 grid
-        self.main_frame.grid_rowconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(1, weight=1)
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_columnconfigure(1, weight=1)
-        self.main_frame.grid_columnconfigure(2, weight=1)
+        self._configure_grid(self.main_frame, rows=2, columns=3)  # Divide main_frame into a 2x3 grid
 
         # Top Row: Selfie Zone Title
         title_label = ctk.CTkLabel(self.main_frame, text="Selfie Zone",
                                    font=("Helvetica", int(self.screen_height / 20), "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, self.screen_height / 10))
 
-        # Calculate the button width and height based on screen size
-        button_width = int(self.screen_width / 6)  # Divide the width equally into 6 parts for 3 buttons and gaps
-        button_height = int(self.screen_height / 5)  # Divide the height equally to create a square button
-
         button_data = [
-            {
-                "image_path": "./button_images/picture.png",
-            },
-            {
-                "image_path": "./button_images/boomerang.png",
-            },
-            {
-                "image_path": "./button_images/video.png",
-            }
+            {"image_path": "./button_images/picture.png"},
+            {"image_path": "./button_images/boomerang.png"},
+            {"image_path": "./button_images/video.png"},
         ]
-
-        for i, data in enumerate(button_data):
-            image = ctk.CTkImage(
-                light_image=Image.open(data["image_path"]),
-                size=(button_width, button_height)
-            )
-            button = ctk.CTkButton(self.main_frame, text="", image=image)
-            button.grid(row=1, column=i, padx=(self.screen_width / 30, 0))
-            button.bind("<Button-1>", lambda event, index=i: self.button(event, index))  # event for left mouse click
-            button.bind("<ButtonRelease-1>", lambda event, index=i: self.button(event, index))  # event for screen touch
-
-    def button(self, event, index):
-        """
-        select what functions to call - picture, boomerang, video
-        :param event:
-        :param index: The index of the button pressed
-        """
-        if index == 0:
-            self.pressed_button = "picture"
-        elif index == 1:
-            return
-            # self.pressed_button = "boomerang"
-        elif index == 2:
-            self.pressed_button = "video"
-
-        self.preview_page()  #
+        self._create_home_page_buttons(button_data)
 
     def preview_page(self):
-        """handles what happens after the picture button is pressed"""
-        if self.main_frame:
-            self.main_frame.destroy()
+        """handles what happens after the button is pressed"""
+        self._destroy_frame(self.main_frame)
 
         self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
         self.preview_frame.pack(expand=True, fill=ctk.BOTH)
 
-        self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,
-                                          height=self.screen_height)
+        self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,height=self.screen_height)
         self.preview_label.grid(row=0, column=0, columnspan=3)
 
         self.timer_label = ctk.CTkLabel(self.preview_frame, text="", text_color="red", bg_color="transparent",
                                         font=("Helvetica", 25, "bold"))
         self.timer_label.place(relx=0.5, rely=0.5, anchor="center")  # place over preview_label
 
-        # calculate size the image will be when displayed in the label
         self.preview_size = self.screen_height * 80 / 100
 
         # open camera
@@ -147,20 +103,62 @@ class UserInterface(ctk.CTkFrame):
             print("Cannot open camera")
             exit()
 
+        self._start_timer()
+
+    def review_page(self, object_):
+        """
+        Review the image/video that was taken
+        Show Accept, Retake and Return buttons
+        :param object_: function takes a PIL image, or video frames
+        """
+        self._destroy_frame(self.preview_frame)
+
+        self.review_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
+        self.review_frame.pack(expand=True, fill=ctk.BOTH)
+        self.review_label = ctk.CTkLabel(self.review_frame, text="")
+        self.review_label.grid(row=0, column=0, columnspan=3)
+
         if self.pressed_button == "picture":
-            # timer for 3 seconds
-            self.timer_start = time.time()
-            self.timer_end = time.time() + 3
-            self.show_picture_frames()  # show camera frames in the preview_label
+            self._display_frame(object_)
+        if self.pressed_button == "video":
+            self._display_frame(object_[0])
+            self.play_video_frame(object_, 1)  # Start playing the video frames recursively
 
-        elif self.pressed_button == "video":
-            # timer for 10 seconds
-            self.timer_start = time.time()
-            self.timer_end = time.time() + 10
-            self.show_video_frames()  # show camera frames in the preview_label
+        self._configure_grid(self.review_frame, rows=2, columns=3)
+        self._create_review_buttons()
 
-        self.timer_thread = threading.Thread(target=self.update_timer)
-        self.timer_thread.start()
+    def keyboard_page(self):
+        """shows the keyboard"""
+        # cancel button returns to homepage
+        self._destroy_frame(self.review_frame)
+
+        # calculate the desired dimensions of the keyboard
+        keyboard_width = self.screen_width
+        keyboard_height = self.screen_height * 70 / 100
+
+        # create a new frame for keyboard and entry box
+        self.keyboard_page_frame = ctk.CTkFrame(self.master, )
+        self.keyboard_page_frame.pack(side="bottom", fill=ctk.BOTH, expand=True)
+
+        # keyboard frame
+        self.keyboard_frame = ctk.CTkFrame(self.keyboard_page_frame, width=keyboard_width, height=keyboard_height)
+        self.keyboard_frame.pack(side="bottom", pady=(0, 10))
+
+        # Entry box for email address
+        self.entry_frame = ctk.CTkFrame(self.keyboard_frame)
+        self.entry_frame.grid(row=0, column=0, columnspan=11, sticky="nsew")
+        # entry box
+        self.email_entry_text = tk.StringVar()
+        self.email_entry = ctk.CTkEntry(self.entry_frame, textvariable=self.email_entry_text,
+                                        width=self.screen_width, height=self.screen_height * 10 / 100)
+        self.email_entry.focus()  # cursor goes to this input field
+        self.email_entry.pack(side="bottom")
+
+        # make keyboard buttons using Keyboard class
+        self.keyboard = Keyboard(master=self.keyboard_frame, width=keyboard_width, height=keyboard_height,
+                                 entry_box=self.email_entry, cancel=self.cancel_button, enter=self.save)
+
+        self.entry_frame.grid_columnconfigure(0, weight=1)
 
     # -------------------- PICTURE --------------------#
     def show_picture_frames(self):
@@ -237,82 +235,13 @@ class UserInterface(ctk.CTkFrame):
             # Schedule the next frame to be played after a delay (e.g., 100 milliseconds)
             self.review_label.after(15, self.play_video_frame, frames, index + 1)
 
-    def review_page(self, object_):
-        """
-        Review the image/video that was taken
-        Show Accept, Retake and Return buttons
-        :param object_: function takes a PIL image, or video frames
-        """
-        if self.preview_frame is not None:
-            self.preview_frame.destroy()
-
-        self.review_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
-        self.review_frame.pack(expand=True, fill=ctk.BOTH)
-
-        # Create a label to display the captured image/video
-        self.review_label = ctk.CTkLabel(self.review_frame, text="")
-        self.review_label.grid(row=0, column=0, columnspan=3)
-
-        if self.pressed_button == "picture":
-            # Convert the frame to RGB format
-            cv2image = cv2.cvtColor(object_, cv2.COLOR_BGR2RGB)
-            # Convert the NumPy array to PIL Image
-            img = Image.fromarray(cv2image)
-            ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, self.screen_height * 0.9))
-            self.review_label.configure(image=ctk_image)  # configure the label to show the image
-        if self.pressed_button == "video":
-            # Convert the first frame to RGB format
-            cv2image = cv2.cvtColor(object_[0], cv2.COLOR_BGR2RGB)
-            # Convert the NumPy array to PIL Image
-            img = Image.fromarray(cv2image)
-            # Create a ctk.CTkImage from the first frame
-            ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, self.screen_height * 0.9))
-            self.review_label.ctk_image = ctk_image  # Avoid garbage collection
-            self.review_label.configure(image=ctk_image)
-
-            # Start playing the video frames recursively
-            self.play_video_frame(object_, 1)
-
-        # Configure the preview_frame for button placement
-        self.review_frame.grid_rowconfigure(1, weight=1)
-        self.review_frame.grid_columnconfigure(0, weight=1)
-        self.review_frame.grid_columnconfigure(1, weight=1)
-        self.review_frame.grid_columnconfigure(2, weight=1)
-
-        # Create buttons for accept, retake, and return to main page
-        accept_button = ctk.CTkButton(self.review_frame, text="Accept", command=self.accept_button)
-        accept_button.grid(row=1, column=0, padx=(self.screen_width / 30, 0))
-
-        retake_button = ctk.CTkButton(self.review_frame, text="Retake", command=self.retake_button)
-        retake_button.grid(row=1, column=1, padx=(self.screen_width / 30, self.screen_width / 30))
-
-        cancel_button = ctk.CTkButton(self.review_frame, text="Cancel", command=self.cancel_button)
-        cancel_button.grid(row=1, column=2, padx=(0, self.screen_width / 30))
-
-    def update_timer(self):
-        """
-        Update timer for picture/video
-        release camera and call review_picture()
-        """
-        if self.pressed_button == "picture":
-            # get remaining time when the function is called again
-            while time.time() < self.timer_end:
-                remaining_time = int(self.timer_end - time.time())
-                self.timer_label.configure(text=f"{remaining_time}s")
-                time.sleep(0.1)
-        elif self.pressed_button == "video":
-            countdown_end = time.time() + 3  # countdown for 3 seconds
-            while time.time() < countdown_end:
-                remaining_time = int(countdown_end - time.time())
-                self.timer_label.configure(text=f"{remaining_time}s")
-                time.sleep(0.1)
-            self.timer_label.destroy()  # destroy timer label on video frames
+    # -------------------- HELPER FUNCTIONS --------------------#
 
     def save(self):
         """watermark and save picture and video when enter key on keyboard is pressed"""
+        # get the current file count
+        count = self._get_count()
         if self.pressed_button == "picture":
-            # get the current file count
-            count = self.get_count()
             if self.last_picture_frame is not None:
                 # Resize the frame before saving
                 resized_frame = cv2.resize(self.last_picture_frame, (
@@ -323,33 +252,27 @@ class UserInterface(ctk.CTkFrame):
                 self.picture_path = f"saved_pictures/{count}.jpeg"
                 cv2.imwrite(filename=self.picture_path, img=frame_rgb)
                 # Apply watermark to the image
-                self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
-                # update the number in count.txt
-                self.update_count(count=count)
-                # send the email
-                self.send_email()
-                # Destroy the existing keyboard frame if it exists and return home
+                # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
+
         if self.pressed_button == "video":
-            # get the current file count
-            count = self.get_count()
             if self.video_frames:
                 self.video_path = f"saved_videos/{count}.mp4"
                 # Create a VideoWriter object to save the frames as a video file
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 # VideoWriter args - path, fps, frame size
                 video_writer = cv2.VideoWriter(self.video_path, fourcc, 20.0, (640, 480))
-
                 # Write each frame to the video file
                 for frame in self.video_frames:
                     video_writer.write(frame)  # write the flipped frame
                 # Release the video writer
                 video_writer.release()
                 # Apply watermark to the video file
-                self.watermark.apply_video_watermark(accepted_video_path=self.video_path)
-                # Update the number in count.txt
-                self.update_count(count=count)
-                # Send the email
-                self.send_email()
+                # self.watermark.apply_video_watermark(accepted_video_path=self.video_path)
+
+        # update the number in count.txt
+        self._update_count(count=count)
+        # send the email
+        self.send_email()
 
         # Destroy the existing keyboard frame if it exists and return home
         if self.keyboard_page_frame:
@@ -386,20 +309,26 @@ class UserInterface(ctk.CTkFrame):
         # get email from entry box
         self.user_email = self.email_entry.get()
         if self.pressed_button == "picture":
-            # send email using the EmailSender class
-            self.mail.send_email(receiver_email=self.user_email, path=self.picture_path, function=self.pressed_button)
+            self.mail.send_email(self.cred, self.user_email, self.picture_path)
         if self.pressed_button == "video":
-            watermarked_video_path = self.video_path.replace('.mp4', '_watermarked.mp4')
-            self.mail.send_email(receiver_email=self.user_email, path=watermarked_video_path,
-                                 function=self.pressed_button)
+            # watermarked_video_path = self.video_path.replace('.mp4', '_watermarked.mp4')
+            self.mail.send_email(self.cred, self.user_email, self.video_path)
+
         self.user_email = None
 
-    def get_screen_size(self):
+    @staticmethod
+    def _configure_grid(frame, rows, columns):
+        for row in range(rows):
+            frame.grid_rowconfigure(row, weight=1)
+        for col in range(columns):
+            frame.grid_columnconfigure(col, weight=1)
+
+    def _get_screen_size(self):
         """screen size based on the master frame"""
         self.screen_width = self.master.winfo_screenwidth()
         self.screen_height = self.master.winfo_screenheight()
 
-    def get_count(self):
+    def _get_count(self):
         """Read count.txt"""
 
         def count(path):
@@ -408,7 +337,7 @@ class UserInterface(ctk.CTkFrame):
                     count_ = int(file.read())
                     return count_
             else:
-                with open(path, "x") as file:  #  create a new file and open it for writing
+                with open(path, "x") as file:  # create a new file and open it for writing
                     count_ = 0
                     file.write(str(count_))
                     return count_
@@ -418,7 +347,19 @@ class UserInterface(ctk.CTkFrame):
         elif self.pressed_button == "video":
             return count(self.video_count_path)
 
-    def update_count(self, count):
+    def _start_timer(self):
+        self.timer_start = time.time()
+        if self.pressed_button == "picture":
+            self.timer_end = time.time() + 3  # timer for 3 seconds
+            self.show_picture_frames()  # show camera frames in the preview_label
+        elif self.pressed_button == "video":
+            self.timer_end = time.time() + 10  # timer for 10 seconds
+            self.show_video_frames()  # show camera frames in the preview_label
+
+        self.timer_thread = threading.Thread(target=self._update_timer)
+        self.timer_thread.start()
+
+    def _update_count(self, count):
         """update the count.txt"""
 
         def update(path, count_=count):
@@ -431,36 +372,65 @@ class UserInterface(ctk.CTkFrame):
         elif self.pressed_button == "video":
             update(self.video_count_path)
 
-    def keyboard_page(self):
-        """shows the keyboard"""
-        # cancel button returns to homepage
-        if self.review_frame:
-            self.review_frame.destroy()
+    def _update_timer(self):
+        """
+        Update timer for picture/video
+        release camera and call review_picture()
+        """
+        if self.pressed_button == "picture":
+            # get remaining time when the function is called again
+            while time.time() < self.timer_end:
+                remaining_time = int(self.timer_end - time.time())
+                self.timer_label.configure(text=f"{remaining_time}s")
+                time.sleep(0.1)
+        elif self.pressed_button == "video":
+            countdown_end = time.time() + 3  # countdown for 3 seconds
+            while time.time() < countdown_end:
+                remaining_time = int(countdown_end - time.time())
+                self.timer_label.configure(text=f"{remaining_time}s")
+                time.sleep(0.1)
+            self.timer_label.destroy()  # destroy timer label on video frames
 
-        # calculate the desired dimensions of the keyboard
-        keyboard_width = self.screen_width
-        keyboard_height = self.screen_height * 70 / 100
+    def _display_frame(self, frame):
+        cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
+        img = Image.fromarray(cv2image)  # Convert the NumPy array to PIL Image
+        ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, self.screen_height * 0.9))
+        self.review_label.ctk_image = ctk_image  # Avoid garbage collection
+        self.review_label.configure(image=ctk_image)  # configure the label to show the image
 
-        # create a new frame for keyboard and entry box
-        self.keyboard_page_frame = ctk.CTkFrame(self.master, )
-        self.keyboard_page_frame.pack(side="bottom", fill=ctk.BOTH, expand=True)
+    def _destroy_frame(self, frame):
+        if frame:
+            frame.destroy()
 
-        # keyboard frame
-        self.keyboard_frame = ctk.CTkFrame(self.keyboard_page_frame, width=keyboard_width, height=keyboard_height)
-        self.keyboard_frame.pack(side="bottom", pady=(0, 10))
+    def _create_home_page_buttons(self, button_data):
+        # Calculate the button width and height based on screen size
+        button_width = int(self.screen_width / 6)  # Divide the width equally into 6 parts for 3 buttons and gaps
+        button_height = int(self.screen_height / 5)  # Divide the height equally to create a square button
 
-        # Entry box for email address
-        self.entry_frame = ctk.CTkFrame(self.keyboard_frame)
-        self.entry_frame.grid(row=0, column=0, columnspan=11, sticky="nsew")
-        # entry box
-        self.email_entry_text = tk.StringVar()
-        self.email_entry = ctk.CTkEntry(self.entry_frame, textvariable=self.email_entry_text,
-                                        width=self.screen_width, height=self.screen_height * 10 / 100)
-        self.email_entry.focus()  # cursor goes to this input field
-        self.email_entry.pack(side="bottom")
+        for i, data in enumerate(button_data):
+            image = ctk.CTkImage(light_image=Image.open(data["image_path"]), size=(button_width, button_height))
+            button = ctk.CTkButton(self.main_frame, text="", image=image)
+            button.grid(row=1, column=i, padx=(self.screen_width / 30, 0))
+            button.bind("<Button-1>", lambda event, index=i: self._home_page_buttons(event, index))
+            button.bind("<ButtonRelease-1>", lambda event, index=i: self._home_page_buttons(event, index))
 
-        # make keyboard buttons using Keyboard class
-        self.keyboard = Keyboard(master=self.keyboard_frame, width=keyboard_width, height=keyboard_height,
-                                 entry_box=self.email_entry, cancel=self.cancel_button, enter=self.save)
+    def _home_page_buttons(self, event, index):
+        """
+        select what functions to call - picture, boomerang, video
+        :param event:
+        :param index: The index of the button pressed
+        """
+        actions = {0: "picture", 1: "boomerang", 2: "video"}
+        self.pressed_button = actions.get(index)
 
-        self.entry_frame.grid_columnconfigure(0, weight=1)
+        self.preview_page()  # Go to preview page after button is clicked
+
+    def _create_review_buttons(self):
+        buttons = [
+            {"text": "Accept", "command": self.accept_button, "col": 0, "padx": (self.screen_height/30, 0)},
+            {"text": "Retake", "command": self.retake_button, "col": 1, "padx": (self.screen_width / 30, self.screen_width / 30)},
+            {"text": "Cancel", "command": self.cancel_button, "col": 2, "padx": (0, self.screen_width / 30)},
+        ]
+        for button in buttons:
+            ctk.CTkButton(self.review_frame, text=button["text"],
+                          command=button["command"]).grid(row=1, column=button["col"], padx=button["padx"])

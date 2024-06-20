@@ -1,62 +1,57 @@
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
-from email.mime.base import MIMEBase
-from email import encoders
-import os
+import base64
+import mimetypes
+from email.message import EmailMessage
+from googleapiclient.errors import HttpError
+from config import configuration as config
+
 
 class EmailSender:
     def __init__(self):
-        self.sender_email = "flawben111@gmail.com"
-        self.password = os.environ.get("EMAIL_PASSWORD")
+        self.sender = "olawal023@student.wethinkcode.co.za"
         self.subject = 'Picture Attachment'
         self.body = "Enjoy your photos!\nDon't forget to share using #RUSHCLAREMONT"
 
-    def send_email(self, receiver_email, path, function):
+    def send_email(self, creds, receiver_email, path):
+        """Create and insert a draft email with attachment.
+         Print the returned draft's message and id.
+        Returns: Draft object, including draft id and message metadata.
         """
-        handles sending the email with attachment
-        :param receiver_email: the customers email
-        :param path: path to the picture that needs to be sent
-        """
-        # SMTP server settings
-        smtp_server = 'smtp.gmail.com'
-        smtp_port = 587  # or the appropriate port number
-        smtp_username = self.sender_email
-        smtp_password = self.password
 
-        # Compose the email
-        msg = MIMEMultipart()
-        msg['From'] = smtp_username
-        msg['To'] = receiver_email
-        msg['Subject'] = self.subject
-
-        if function == "picture":
-            # Attach the picture
-            with open(path, 'rb') as picture_file:
-                picture_data = picture_file.read()
-                picture_mime = MIMEImage(picture_data, name='picture.jpg')
-                msg.attach(picture_mime)
-        elif function == "video":
-            # Attach the video
-            with open(path, 'rb') as video_file:
-                video_data = video_file.read()
-                video_mime = MIMEBase('application', 'octet-stream')
-                video_mime.set_payload(video_data)
-                encoders.encode_base64(video_mime)
-                video_mime.add_header('Content-Disposition', 'attachment', filename=os.path.basename(path))
-                msg.attach(video_mime)
-
-        # Add the body message
-        body = MIMEText(self.body)
-        msg.attach(body)
-
-        # Send the email
         try:
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
-                server.starttls()
-                server.login(smtp_username, smtp_password)
-                server.send_message(msg)
-            print("Email sent successfully!")
-        except Exception as e:
-            print("An error occurred while sending the email:", str(e))
+            # create gmail api client
+            service = config.service_build(creds)
+            message = EmailMessage()
+
+            # headers
+            message["To"] = receiver_email
+            message["From"] = self.sender
+            message["Subject"] = self.subject
+
+            # text
+            message.set_content(self.body)
+
+            # attachment
+            attachment_filename = path
+            # guessing the MIME type
+            type_subtype, _ = mimetypes.guess_type(attachment_filename)
+            maintype, subtype = type_subtype.split("/")
+
+            with open(attachment_filename, "rb") as fp:
+                attachment_data = fp.read()
+            message.add_attachment(attachment_data, maintype, subtype)
+
+            encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+            create_message = {"raw": encoded_message}
+            # pylint: disable=E1101
+            message = (
+                service.users()
+                .messages()
+                .send(userId="me", body=create_message)
+                .execute()
+            )
+            print("Email sent successfully")
+        except HttpError as error:
+            print(f"An error occurred: {error}")
+            message = None
+        return message

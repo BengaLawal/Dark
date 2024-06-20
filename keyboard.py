@@ -2,6 +2,7 @@ import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
 from validate_email import validate_email
 
+
 class Keyboard:
     def __init__(self, master, width, height, entry_box, cancel, enter):
         self.master = master
@@ -47,7 +48,7 @@ class Keyboard:
             column_ = 0  # column in grid
             for alphabet in letters[row]:
                 btn_ = ctk.CTkButton(self.master, text=alphabet, width=self.keysize_width, height=self.keysize_height,
-                                     command= lambda k_=alphabet: self.attach_key_press(k_))
+                                     command=lambda k_=alphabet: self.attach_key_press(k_))
                 btn_.grid(row=row_, column=column_, sticky="nsew")
                 column_ += 1
             row_ += 1
@@ -93,7 +94,7 @@ class Keyboard:
         """
         Handles the backspace button
         """
-        if isinstance(self.entry_box, ctk.CTkEntry):  #check if the entry box is an instance of ctk.CTkEntry
+        if isinstance(self.entry_box, ctk.CTkEntry):
             current_text = self.entry_box.get()
             cursor_index = self.entry_box.index("insert")
             if cursor_index > 0:
@@ -119,7 +120,7 @@ class Keyboard:
             self.enter()
         else:
             messagebox = CTkMessagebox(title="Invalid email", message="The email you have entered is invalid",
-                          icon="question", option_1="Try again", option_2="Cancel")
+                                       icon="question", option_1="Try again", option_2="Cancel")
             response = messagebox.get()
             if response == "Try again":
                 messagebox.destroy()
@@ -145,7 +146,8 @@ class Keyboard:
                 for row in self.number.keys():
                     column_ = 1  # column in grid
                     for number in self.number[row]:
-                        btn_ = ctk.CTkButton(self.number_row_frame, text=number, width=self.keysize_width, height=self.keysize_height,
+                        btn_ = ctk.CTkButton(self.number_row_frame, text=number, width=self.keysize_width,
+                                             height=self.keysize_height,
                                              command=lambda n_=number: self.attach_key_press(n_))
                         btn_.grid(row=row_, column=column_, sticky="nsew")
                         column_ += 1
@@ -166,8 +168,9 @@ class Keyboard:
         # look at the else statement in attach_key_press() to see how the uppercase is implemented
         for widget in self.master.winfo_children():
             if isinstance(widget, ctk.CTkButton) and widget.cget("text") not in \
-                    ["gmail", "yahoo", "hotmail", ".com", "Enter", "Backspace", "Cancel", "123",]:  # if widget is a button
-                    widget.configure(text=widget.cget("text").swapcase())
+                    ["gmail", "yahoo", "hotmail", ".com", "Enter", "Backspace", "Cancel",
+                     "123", ]:  # if widget is a button
+                widget.configure(text=widget.cget("text").swapcase())
         self.is_upper = not self.is_upper
 
     def handle_space(self):

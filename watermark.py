@@ -4,6 +4,7 @@ from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 from moviepy.video.VideoClip import ImageClip
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
+
 class Watermark:
     def __init__(self):
         self.watermark_image_path = "watermark/watermark.png"
@@ -25,7 +26,8 @@ class Watermark:
         watermark_image = watermark_image.resize((watermark_width, watermark_height))
 
         # Add the watermark image to the bottom right corner of the image
-        watermark_position = (accepted_image.width - watermark_image.width, accepted_image.height - watermark_image.height)
+        watermark_position = (
+        accepted_image.width - watermark_image.width, accepted_image.height - watermark_image.height)
         accepted_image.paste(watermark_image, watermark_position, mask=watermark_image)
 
         # Calculate the position for the watermark text
@@ -47,7 +49,6 @@ class Watermark:
         accepted_image.save(accepted_picture_path)
 
         print("Watermark applied to picture successfully!")
-
 
     def apply_video_watermark(self, accepted_video_path):
         """
@@ -99,7 +100,8 @@ class Watermark:
         video_with_watermark = video_with_watermark.set_audio(video_clip.audio)
 
         # Save the watermarked video
-        watermarked_video_path = accepted_video_path.replace('.mp4', '_watermarked.mp4')  # replace .mp4 with _watermarked
+        watermarked_video_path = accepted_video_path.replace('.mp4',
+                                                             '_watermarked.mp4')  # replace .mp4 with _watermarked
         video_with_watermark.write_videofile(watermarked_video_path, codec='libx264')
 
         # Close the video clips
