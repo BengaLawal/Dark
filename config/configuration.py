@@ -14,7 +14,7 @@ def login():
     """
     The function `user_authentication` checks if the user has valid credentials, and if not, it prompts
     the user to log in and saves the credentials for future use.
-    :return: a service object that can be used to interact with the Google Calendar API.
+    :return: a service object that can be used to interact with the gmail API.
     """
     creds = check_if_token_exist()
 

@@ -9,8 +9,12 @@ import cv2
 from keyboard import Keyboard
 from mail import EmailSender
 
+PICTURE_COUNT_PATH = "saved_pictures/count.txt"
+VIDEO_COUNT_PATH = "saved_videos/count.txt"
+
 
 class UserInterface(ctk.CTkFrame):
+
     def __init__(self, master, login_cred):
         super().__init__(master)
         self.master = master
@@ -18,9 +22,8 @@ class UserInterface(ctk.CTkFrame):
         self.mail = EmailSender()
         self.cred = login_cred
 
-        self.screen_width = None
-        self.screen_height = None
-        self._get_screen_size()  # gets screen_width and screen_height
+        self.screen_width = self.master.winfo_screenwidth()
+        self.screen_height = self.master.winfo_screenheight()
 
         self.main_frame = None
         self.pressed_button = None
@@ -41,9 +44,6 @@ class UserInterface(ctk.CTkFrame):
         self.last_picture_frame = None
         self.video_frames = []
 
-        self.picture_count_path = "saved_pictures/count.txt"
-        self.video_count_path = "saved_videos/count.txt"
-
         self.keyboard_page_frame = None
         self.entry_frame = None
         self.keyboard_frame = None
@@ -54,16 +54,13 @@ class UserInterface(ctk.CTkFrame):
 
         self.picture_path = None
         self.video_path = None
-        self.email_sender = None
 
     def home_page(self):
         """
         Set up the Main page
         """
         self.master.title("Darkroom Booth")
-        self.master.attributes("-fullscreen", True)  # Make the main window full screen
-
-        # print(f"Screen Size: {self.screen_width}x{self.screen_height}")
+        self.master.attributes("-fullscreen", True)
 
         self.main_frame = ctk.CTkFrame(self.master, bg_color="red")
         self.main_frame.pack(expand=True, fill=ctk.BOTH)
@@ -84,11 +81,11 @@ class UserInterface(ctk.CTkFrame):
     def preview_page(self):
         """handles what happens after the button is pressed"""
         self._destroy_frame(self.main_frame)
-
         self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
         self.preview_frame.pack(expand=True, fill=ctk.BOTH)
 
-        self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,height=self.screen_height)
+        self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,
+                                          height=self.screen_height)
         self.preview_label.grid(row=0, column=0, columnspan=3)
 
         self.timer_label = ctk.CTkLabel(self.preview_frame, text="", text_color="red", bg_color="transparent",
@@ -112,9 +109,9 @@ class UserInterface(ctk.CTkFrame):
         :param object_: function takes a PIL image, or video frames
         """
         self._destroy_frame(self.preview_frame)
-
         self.review_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
         self.review_frame.pack(expand=True, fill=ctk.BOTH)
+
         self.review_label = ctk.CTkLabel(self.review_frame, text="")
         self.review_label.grid(row=0, column=0, columnspan=3)
 
@@ -163,57 +160,63 @@ class UserInterface(ctk.CTkFrame):
     # -------------------- PICTURE --------------------#
     def show_picture_frames(self):
         """show camera frames in preview_label"""
-        # Get the latest frame and convert into Image
-        ret, frame = self.cap.read()
-        # if frame is read correctly ret is True
-        if not ret:
-            raise ValueError("Failed to capture video")
+        try:
+            # Get the latest frame and convert into Image
+            ret, frame = self.cap.read()
+            # if frame is read correctly ret is True
+            if not ret:
+                raise ValueError("Failed to capture video")
 
-        # Convert the latest frame to RGB format
-        cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Convert the NumPy array to PIL Image
-        img = Image.fromarray(cv2image)
-        ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
-        self.preview_label.ctk_image = ctk_image  # avoid garbage collection
-        self.preview_label.configure(image=ctk_image)
+            # Convert the latest frame to RGB format
+            cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Convert the NumPy array to PIL Image
+            img = Image.fromarray(cv2image)
+            ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
+            self.preview_label.ctk_image = ctk_image  # avoid garbage collection
+            self.preview_label.configure(image=ctk_image)
 
-        if time.time() - self.timer_start > 3:  # start saving the frames after 3 seconds
-            # self.last_frame will eventually be equal to the very last frame which will be displayed in the review
-            self.last_picture_frame = frame
+            if time.time() - self.timer_start > 3:  # start saving the frames after 3 seconds
+                # self.last_frame will eventually be equal to the very last frame which will be displayed in the review
+                self.last_picture_frame = frame
 
-        if time.time() <= self.timer_end:
-            # Repeat after an interval to capture continuously
-            self.preview_label.after(10, self.show_picture_frames)
-        else:
-            self.cap.release()  # close the camera
-            self.review_page(self.last_picture_frame)  # pass captured image for review
+            if time.time() <= self.timer_end:
+                # Repeat after an interval to capture continuously
+                self.preview_label.after(10, self.show_picture_frames)
+            else:
+                self.cap.release()  # close the camera
+                self.review_page(self.last_picture_frame)  # pass captured image for review
+        except Exception as e:
+            print(f"Error in showing picture frames: {e}")
 
     # -------------------- VIDEO --------------------#
     def show_video_frames(self):
         """show camera frames in preview_label"""
-        # Capture frame-by-frame
-        ret, frame = self.cap.read()
-        # if frame is read correctly ret is True
-        if not ret:
-            raise ValueError("Failed to capture video")
+        try:
+            # Capture frame-by-frame
+            ret, frame = self.cap.read()
+            # if frame is read correctly ret is True
+            if not ret:
+                raise ValueError("Failed to capture video")
 
-        # Convert the latest frame to RGB format
-        cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Convert the NumPy array to PIL Image
-        img = Image.fromarray(cv2image)
-        ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
-        self.preview_label.ctk_image = ctk_image  # avoid garbage collection
-        self.preview_label.configure(image=ctk_image)
+            # Convert the latest frame to RGB format
+            cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Convert the NumPy array to PIL Image
+            img = Image.fromarray(cv2image)
+            ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
+            self.preview_label.ctk_image = ctk_image  # avoid garbage collection
+            self.preview_label.configure(image=ctk_image)
 
-        if time.time() - self.timer_start > 3:  # start saving the frames after 3 seconds
-            self.video_frames.append(frame)
+            if time.time() - self.timer_start > 3:  # start saving the frames after 3 seconds
+                self.video_frames.append(frame)
 
-        if time.time() <= self.timer_end:
-            # Repeat after an interval to capture continuously
-            self.preview_label.after(20, self.show_video_frames)
-        else:
-            self.cap.release()  # close the camera
-            self.review_page(self.video_frames)  # open the review page
+            if time.time() <= self.timer_end:
+                # Repeat after an interval to capture continuously
+                self.preview_label.after(20, self.show_video_frames)
+            else:
+                self.cap.release()  # close the camera
+                self.review_page(self.video_frames)  # open the review page
+        except Exception as e:
+            print(f"Error in showing video frames: {e}")
 
     def play_video_frame(self, frames, index):
         """
@@ -239,45 +242,56 @@ class UserInterface(ctk.CTkFrame):
 
     def save(self):
         """watermark and save picture and video when enter key on keyboard is pressed"""
-        # get the current file count
+        self.user_email = self.email_entry.get()  # get the typed in user password
         count = self._get_count()
-        if self.pressed_button == "picture":
-            if self.last_picture_frame is not None:
-                # Resize the frame before saving
-                resized_frame = cv2.resize(self.last_picture_frame, (
-                    1280, 853))
-                # Convert the frame to RGB format
-                frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-                # Save the resized frame as an image
-                self.picture_path = f"saved_pictures/{count}.jpeg"
-                cv2.imwrite(filename=self.picture_path, img=frame_rgb)
-                # Apply watermark to the image
-                # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
 
+        save_thread = threading.Thread(target=self._save_and_send, args=(count,))
+        save_thread.start()
+
+        # Destroy the existing keyboard frame if it exists and return home
+        if self.keyboard_page_frame:
+            self.keyboard_page_frame.destroy()
+            self.home_page()
+
+    def _save_and_send(self, count):
+        """save picture or video and send email in a background thread"""
+        if self.pressed_button == "picture":
+            self._save_picture(count)
         if self.pressed_button == "video":
-            if self.video_frames:
-                self.video_path = f"saved_videos/{count}.mp4"
-                # Create a VideoWriter object to save the frames as a video file
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                # VideoWriter args - path, fps, frame size
-                video_writer = cv2.VideoWriter(self.video_path, fourcc, 20.0, (640, 480))
-                # Write each frame to the video file
-                for frame in self.video_frames:
-                    video_writer.write(frame)  # write the flipped frame
-                # Release the video writer
-                video_writer.release()
-                # Apply watermark to the video file
-                # self.watermark.apply_video_watermark(accepted_video_path=self.video_path)
+            self._save_video(count)
 
         # update the number in count.txt
         self._update_count(count=count)
         # send the email
         self.send_email()
 
-        # Destroy the existing keyboard frame if it exists and return home
-        if self.keyboard_page_frame:
-            self.keyboard_page_frame.destroy()
-            self.home_page()
+    def _save_picture(self, count):
+        if self.last_picture_frame is not None:
+            # Resize the frame before saving
+            resized_frame = cv2.resize(self.last_picture_frame, (
+                1280, 853))
+            # Convert the frame to RGB format
+            frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+            # Save the resized frame as an image
+            self.picture_path = f"saved_pictures/{count}.jpeg"
+            cv2.imwrite(filename=self.picture_path, img=frame_rgb)
+            # Apply watermark to the image
+            # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
+
+    def _save_video(self, count):
+        if self.video_frames:
+            self.video_path = f"saved_videos/{count}.mp4"
+            # Create a VideoWriter object to save the frames as a video file
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            # VideoWriter args - path, fps, frame size
+            video_writer = cv2.VideoWriter(self.video_path, fourcc, 20.0, (640, 480))
+            # Write each frame to the video file
+            for frame in self.video_frames:
+                video_writer.write(frame)  # write the flipped frame
+            # Release the video writer
+            video_writer.release()
+            # Apply watermark to the video file
+            # self.watermark.apply_video_watermark(accepted_video_path=self.video_path)
 
     def accept_button(self):
         """pressing the accept button leads to keyboard page"""
@@ -307,7 +321,6 @@ class UserInterface(ctk.CTkFrame):
     def send_email(self):
         """send email containing picture"""
         # get email from entry box
-        self.user_email = self.email_entry.get()
         if self.pressed_button == "picture":
             self.mail.send_email(self.cred, self.user_email, self.picture_path)
         if self.pressed_button == "video":
@@ -323,29 +336,34 @@ class UserInterface(ctk.CTkFrame):
         for col in range(columns):
             frame.grid_columnconfigure(col, weight=1)
 
-    def _get_screen_size(self):
-        """screen size based on the master frame"""
-        self.screen_width = self.master.winfo_screenwidth()
-        self.screen_height = self.master.winfo_screenheight()
-
     def _get_count(self):
         """Read count.txt"""
-
-        def count(path):
-            if os.path.exists(path):
-                with open(path, "r") as file:
-                    count_ = int(file.read())
-                    return count_
-            else:
-                with open(path, "x") as file:  # create a new file and open it for writing
-                    count_ = 0
-                    file.write(str(count_))
-                    return count_
-
+        count_file = ""
         if self.pressed_button == "picture":
-            return count(self.picture_count_path)
+            count_file = PICTURE_COUNT_PATH
         elif self.pressed_button == "video":
-            return count(self.video_count_path)
+            count_file = VIDEO_COUNT_PATH
+
+        if os.path.exists(count_file):
+            with open(count_file, "r") as file:
+                count_ = int(file.read())
+                return count_
+        else:
+            with open(count_file, "x") as file:  # create a new file and open it for writing
+                count_ = 0
+                file.write(str(count_))
+                return count_
+
+    def _update_count(self, count):
+        """update the count.txt"""
+        count_file = int
+        if self.pressed_button == "picture":
+            count_file = PICTURE_COUNT_PATH
+        elif self.pressed_button == "video":
+            count_file = VIDEO_COUNT_PATH
+
+        with open(count_file, "w") as file:
+            file.write(str(count + 1))
 
     def _start_timer(self):
         self.timer_start = time.time()
@@ -359,37 +377,23 @@ class UserInterface(ctk.CTkFrame):
         self.timer_thread = threading.Thread(target=self._update_timer)
         self.timer_thread.start()
 
-    def _update_count(self, count):
-        """update the count.txt"""
-
-        def update(path, count_=count):
-            with open(path, "w") as file:
-                count_ += 1
-                file.write(str(count_))
-
-        if self.pressed_button == "picture":
-            update(self.picture_count_path)
-        elif self.pressed_button == "video":
-            update(self.video_count_path)
-
     def _update_timer(self):
         """
         Update timer for picture/video
         release camera and call review_picture()
         """
         if self.pressed_button == "picture":
-            # get remaining time when the function is called again
             while time.time() < self.timer_end:
                 remaining_time = int(self.timer_end - time.time())
                 self.timer_label.configure(text=f"{remaining_time}s")
                 time.sleep(0.1)
         elif self.pressed_button == "video":
-            countdown_end = time.time() + 3  # countdown for 3 seconds
-            while time.time() < countdown_end:
-                remaining_time = int(countdown_end - time.time())
+            while time.time() < self.timer_end:
+                remaining_time = int(self.timer_end - time.time())
                 self.timer_label.configure(text=f"{remaining_time}s")
                 time.sleep(0.1)
-            self.timer_label.destroy()  # destroy timer label on video frames
+
+        self.timer_label.destroy()  # destroy timer label on video frames
 
     def _display_frame(self, frame):
         cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
@@ -427,8 +431,9 @@ class UserInterface(ctk.CTkFrame):
 
     def _create_review_buttons(self):
         buttons = [
-            {"text": "Accept", "command": self.accept_button, "col": 0, "padx": (self.screen_height/30, 0)},
-            {"text": "Retake", "command": self.retake_button, "col": 1, "padx": (self.screen_width / 30, self.screen_width / 30)},
+            {"text": "Accept", "command": self.accept_button, "col": 0, "padx": (self.screen_height / 30, 0)},
+            {"text": "Retake", "command": self.retake_button, "col": 1,
+             "padx": (self.screen_width / 30, self.screen_width / 30)},
             {"text": "Cancel", "command": self.cancel_button, "col": 2, "padx": (0, self.screen_width / 30)},
         ]
         for button in buttons:
