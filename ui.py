@@ -393,7 +393,7 @@ class UserInterface(ctk.CTkFrame):
                 self.timer_label.configure(text=f"{remaining_time}s")
                 time.sleep(0.1)
 
-        self.timer_label.destroy()  # destroy timer label on video frames
+        self.timer_label.destroy()
 
     def _display_frame(self, frame):
         cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
