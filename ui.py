@@ -271,10 +271,10 @@ class UserInterface(ctk.CTkFrame):
             resized_frame = cv2.resize(self.last_picture_frame, (
                 1280, 853))
             # Convert the frame to RGB format
-            frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+            # frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
             # Save the resized frame as an image
             self.picture_path = f"saved_pictures/{count}.jpeg"
-            cv2.imwrite(filename=self.picture_path, img=frame_rgb)
+            cv2.imwrite(filename=self.picture_path, img=resized_frame)
             # Apply watermark to the image
             # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
 
@@ -393,7 +393,7 @@ class UserInterface(ctk.CTkFrame):
                 self.timer_label.configure(text=f"{remaining_time}s")
                 time.sleep(0.1)
 
-        self.timer_label.destroy()
+        # self.timer_label.destroy()
 
     def _display_frame(self, frame):
         cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
