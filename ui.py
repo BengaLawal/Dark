@@ -122,11 +122,9 @@ class UserInterface(ctk.CTkFrame):
         if self.pressed_button == "picture":
             self._display_frame(object_)
         if self.pressed_button == "boomerang":
-            self._display_frame(object_[0])
             self.play_video_frame(object_, 1)
         if self.pressed_button == "video":
-            self._display_frame(object_[0])
-            self.play_video_frame(object_, 1)  # Start playing the video frames recursively
+            self.play_video_frame(object_, 1)
 
         self._configure_grid(self.review_frame, rows=2, columns=3)
         self._create_review_buttons()
@@ -165,95 +163,63 @@ class UserInterface(ctk.CTkFrame):
         self.entry_frame.grid_columnconfigure(0, weight=1)
 
     # -------------------- PREVIEW --------------------#
-    def picture_preview(self):
-        """show camera frames in preview_label"""
+
+    def update_preview(self):
+        """Update the preview label with the latest frame and handle frame storage based on capture type."""
         try:
             # Get the latest frame and convert into Image
             ret, frame = self.cap.read()
-            # if frame is read correctly ret is True
             if not ret:
                 raise ValueError("Failed to capture video")
 
-            # Convert the latest frame to RGB format
+            # Convert the latest frame to RGB format and to PIL Image
             cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # Convert the NumPy array to PIL Image
             img = Image.fromarray(cv2image)
             ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
             self.preview_label.ctk_image = ctk_image  # avoid garbage collection
             self.preview_label.configure(image=ctk_image)
 
-            if time.time() - self.timer_start > 3:  # start saving the frames after 3 seconds
-                # self.last_frame will eventually be equal to the very last frame which will be displayed in the review
-                self.last_picture_frame = frame
+            current_time = time.time()
+            if self.pressed_button == 'picture':
+                self.handle_picture_preview(current_time, frame)
+            elif self.pressed_button == 'boomerang':
+                self.handle_boomerang_preview(current_time, frame)
+            elif self.pressed_button == 'video':
+                self.handle_video_preview(current_time, frame)
 
-            if time.time() <= self.timer_end:
-                # Repeat after an interval to capture continuously
-                self.preview_label.after(10, self.picture_preview)
-            else:
-                self.cap.release()  # close the camera
-                self.review_page(self.last_picture_frame)  # pass captured image for review
         except Exception as e:
-            print(f"Error in showing picture frames: {e}")
+            print(f"Error in showing {self.pressed_button} frames: {e}")
 
-    def boomerang_preview(self):
-        """show camera frames in preview_label"""
-        try:
-            # Get the latest frame and convert into Image
-            ret, frame = self.cap.read()
-            # if frame is read correctly ret is True
-            if not ret:
-                raise ValueError("Failed to capture video")
+    def handle_picture_preview(self, current_time, frame):
+        if current_time - self.timer_start > 3:
+            self.last_picture_frame = frame
 
-            # Convert the latest frame to RGB format
-            cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # Convert the NumPy array to PIL Image
-            img = Image.fromarray(cv2image)
-            ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
-            self.preview_label.ctk_image = ctk_image  # avoid garbage collection
-            self.preview_label.configure(image=ctk_image)
+        if current_time <= self.timer_end:
+            self.preview_label.after(10, lambda: self.update_preview())
+        else:
+            self.cap.release()
+            self.review_page(self.last_picture_frame)
 
-            if time.time() - self.timer_start > 0:  # start saving the frames after 3 seconds
-                # self.last_frame will eventually be equal to the very last frame which will be displayed in the review
-                self.boomerang_frames.append(frame)
+    def handle_boomerang_preview(self, current_time, frame):
+        if current_time - self.timer_start > 0:
+            self.boomerang_frames.append(frame)
 
-            if time.time() <= self.timer_end:
-                # Repeat after an interval to capture continuously
-                self.preview_label.after(20, self.boomerang_preview)
-            else:
-                self.cap.release()  # close the camera
-                self.arrange_boomerang_frames()
-                self.review_page(self.boomerang_frames)
-        except Exception as e:
-            print(f"Error in showing boomerang frames: {e}")
+        if current_time <= self.timer_end:
+            self.preview_label.after(20, lambda: self.update_preview())
+        else:
+            self.cap.release()
+            self.arrange_boomerang_frames()
+            self.review_page(self.boomerang_frames)
 
-    def video_preview(self):
-        """show camera frames in preview_label"""
-        try:
-            # Capture frame-by-frame
-            ret, frame = self.cap.read()
-            # if frame is read correctly ret is True
-            if not ret:
-                raise ValueError("Failed to capture video")
+    def handle_video_preview(self, current_time, frame):
+        if current_time - self.timer_start > 3:
+            self.video_frames.append(frame)
 
-            # Convert the latest frame to RGB format
-            cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # Convert the NumPy array to PIL Image
-            img = Image.fromarray(cv2image)
-            ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
-            self.preview_label.ctk_image = ctk_image  # avoid garbage collection
-            self.preview_label.configure(image=ctk_image)
-
-            if time.time() - self.timer_start > 3:  # start saving the frames after 3 seconds
-                self.video_frames.append(frame)
-
-            if time.time() <= self.timer_end:
-                # Repeat after an interval to capture continuously
-                self.preview_label.after(20, self.video_preview)
-            else:
-                self.cap.release()  # close the camera
-                self.review_page(self.video_frames)  # open the review page
-        except Exception as e:
-            print(f"Error in showing video frames: {e}")
+        if current_time <= self.timer_end:
+            self.preview_label.after(20, lambda: self.update_preview())
+        else:
+            self.cap.release()
+            self.review_page(self.video_frames)
 
     def play_video_frame(self, frames, index):
         """
@@ -453,13 +419,12 @@ class UserInterface(ctk.CTkFrame):
         self.timer_start = time.time()
         if self.pressed_button == "picture":
             self.timer_end = time.time() + 3  # timer for 3 seconds
-            self.picture_preview()  # show camera frames in the preview_label
         elif self.pressed_button == "boomerang":
             self.timer_end = time.time() + 2
-            self.boomerang_preview()
         elif self.pressed_button == "video":
             self.timer_end = time.time() + 10  # timer for 10 seconds
-            self.video_preview()  # show camera frames in the preview_label
+
+        self.update_preview()  # show camera frames in the preview_label
 
         self.timer_thread = threading.Thread(target=self._update_timer)
         self.timer_thread.start()
@@ -471,10 +436,14 @@ class UserInterface(ctk.CTkFrame):
         """
         while time.time() < self.timer_end:
             remaining_time = int(self.timer_end - time.time())
-            self.timer_label.configure(text=f"{remaining_time}s")
+            # Check if timer_label still exists
+            if self.timer_label and self.timer_label.winfo_exists():
+                self.timer_label.configure(text=f"{remaining_time}s")
             time.sleep(0.1)
 
-        # self.timer_label.destroy()
+        # Ensure the label is destroyed after the timer ends
+        if self.timer_label and self.timer_label.winfo_exists():
+            self.timer_label.destroy()
 
     def _display_frame(self, frame):
         cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
@@ -489,6 +458,7 @@ class UserInterface(ctk.CTkFrame):
             frame.destroy()
 
     def arrange_boomerang_frames(self):
+        """Arrange the boomerang_frames to an actual boomerang"""
         collected_frames = self.boomerang_frames
         complete_boomerang = []
         for i in range(3):

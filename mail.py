@@ -55,7 +55,7 @@ class EmailSender:
         message["From"] = self.sender
         message["Subject"] = self.subject
         message.attach(MIMEText(self.body))
-        attachment = self.build_file_part(path)
+        attachment = self._build_file_part(path)
         message.attach(attachment)
         return {"raw": base64.urlsafe_b64encode(message.as_bytes()).decode()}
 
@@ -71,7 +71,7 @@ class EmailSender:
         service.users().messages().send(userId="me", body=message).execute()
 
     @staticmethod
-    def build_file_part(file):
+    def _build_file_part(file):
         """Creates a MIME part for a file.
         Args:
           file: The path to the file to be attached.
@@ -96,7 +96,7 @@ class EmailSender:
             with open(file, "rb") as data:
                 msg = MIMEBase(main_type, sub_type)
                 msg.set_payload(data.read())
-                encoders.encode_base64(msg)
+                # encoders.encode_base64(msg)
         filename = os.path.basename(file)
         msg.add_header("Content-Disposition", "attachment", filename=filename)
         return msg

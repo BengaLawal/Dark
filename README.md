@@ -5,7 +5,6 @@ Selfie Zone is a custom application built using Python and the customtkinter lib
 
 ## Table of Contents
 <!-- TOC -->
-* [Dark](#dark)
 * [Installation](#installation)
     * [Prerequisites](#prerequisites)
     * [Clone the Repository](#clone-the-repository)
