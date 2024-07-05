@@ -10,6 +10,7 @@ from keyboard import Keyboard
 from mail import EmailSender
 
 PICTURE_COUNT_PATH = "saved_pictures/count.txt"
+BOOMERANG_COUNT_PATH = "saved_boomerangs/count.txt"
 VIDEO_COUNT_PATH = "saved_videos/count.txt"
 
 
@@ -42,6 +43,7 @@ class UserInterface(ctk.CTkFrame):
         self.timer_thread = None
 
         self.last_picture_frame = None
+        self.boomerang_frames = []
         self.video_frames = []
 
         self.keyboard_page_frame = None
@@ -119,6 +121,9 @@ class UserInterface(ctk.CTkFrame):
 
         if self.pressed_button == "picture":
             self._display_frame(object_)
+        if self.pressed_button == "boomerang":
+            self._display_frame(object_[0])
+            self.play_video_frame(object_, 1)
         if self.pressed_button == "video":
             self._display_frame(object_[0])
             self.play_video_frame(object_, 1)  # Start playing the video frames recursively
@@ -190,6 +195,37 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             print(f"Error in showing picture frames: {e}")
 
+    def boomerang_preview(self):
+        """show camera frames in preview_label"""
+        try:
+            # Get the latest frame and convert into Image
+            ret, frame = self.cap.read()
+            # if frame is read correctly ret is True
+            if not ret:
+                raise ValueError("Failed to capture video")
+
+            # Convert the latest frame to RGB format
+            cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Convert the NumPy array to PIL Image
+            img = Image.fromarray(cv2image)
+            ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
+            self.preview_label.ctk_image = ctk_image  # avoid garbage collection
+            self.preview_label.configure(image=ctk_image)
+
+            if time.time() - self.timer_start > 0:  # start saving the frames after 3 seconds
+                # self.last_frame will eventually be equal to the very last frame which will be displayed in the review
+                self.boomerang_frames.append(frame)
+
+            if time.time() <= self.timer_end:
+                # Repeat after an interval to capture continuously
+                self.preview_label.after(20, self.boomerang_preview)
+            else:
+                self.cap.release()  # close the camera
+                self.arrange_boomerang_frames()
+                self.review_page(self.boomerang_frames)
+        except Exception as e:
+            print(f"Error in showing boomerang frames: {e}")
+
     def video_preview(self):
         """show camera frames in preview_label"""
         try:
@@ -257,6 +293,8 @@ class UserInterface(ctk.CTkFrame):
         """save picture or video and send email in a background thread"""
         if self.pressed_button == "picture":
             self._save_picture(count)
+        if self.pressed_button == "boomerang":
+            self._save_boomerang(count)
         if self.pressed_button == "video":
             self._save_video(count)
 
@@ -264,6 +302,22 @@ class UserInterface(ctk.CTkFrame):
         self._update_count(count=count)
         # send the email
         self.send_email()
+
+    def _save_picture(self, count):
+        if self.last_picture_frame is not None:
+            # Resize the frame before saving
+            resized_frame = cv2.resize(self.last_picture_frame, (
+                1280, 853))
+            # Convert the frame to RGB format
+            # frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+            # Save the resized frame as an image
+            self.picture_path = f"saved_pictures/{count}.jpeg"
+            cv2.imwrite(filename=self.picture_path, img=resized_frame)
+            # Apply watermark to the image
+            # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
+
+    def _save_boomerang(self, count):
+        pass
 
     def _save_video(self, count):
         if self.video_frames:
@@ -280,24 +334,13 @@ class UserInterface(ctk.CTkFrame):
             # Apply watermark to the video file
             # self.watermark.apply_video_watermark(accepted_video_path=self.video_path)
 
-    def _save_picture(self, count):
-        if self.last_picture_frame is not None:
-            # Resize the frame before saving
-            resized_frame = cv2.resize(self.last_picture_frame, (
-                1280, 853))
-            # Convert the frame to RGB format
-            # frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-            # Save the resized frame as an image
-            self.picture_path = f"saved_pictures/{count}.jpeg"
-            cv2.imwrite(filename=self.picture_path, img=resized_frame)
-            # Apply watermark to the image
-            # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
-
     def send_email(self):
         """send email containing picture"""
         # get email from entry box
         if self.pressed_button == "picture":
             self.mail.send_email(self.cred, self.user_email, self.picture_path)
+        # elif self.pressed_button == "boomerang":
+            # self.mail.send_email(self.cred, self.user_email, self.boomerang_path)
         if self.pressed_button == "video":
             # watermarked_video_path = self.video_path.replace('.mp4', '_watermarked.mp4')
             self.mail.send_email(self.cred, self.user_email, self.video_path)
@@ -312,22 +355,22 @@ class UserInterface(ctk.CTkFrame):
 
     def retake_button(self):
         """Retake the picture"""
-        if self.review_frame is not None:
-            self.review_frame.destroy()
+        self._destroy_frame(self.review_frame)
         if self.pressed_button == "picture":
             self.last_picture_frame = None  # get rid of the last picture taken
-            self.preview_page()
+        elif self.pressed_button == "boomerang":
+            self.boomerang_frames = []
         elif self.pressed_button == "video":
             self.video_frames = []  # get rid of the old video by making the list empty again
-            self.preview_page()
+
+        self.preview_page()
 
     def cancel_button(self):
         """Return to main page"""
-        if self.review_frame is not None:
-            self.review_frame.destroy()
-        if self.keyboard_page_frame is not None:
-            self.keyboard_page_frame.destroy()
+        self._destroy_frame(self.keyboard_page_frame)
+        self._destroy_frame(self.review_frame)
         self.last_picture_frame = None
+        self.boomerang_frames = []
         self.video_frames = []
         self.home_page()
 
@@ -378,6 +421,8 @@ class UserInterface(ctk.CTkFrame):
         count_file = ""
         if self.pressed_button == "picture":
             count_file = PICTURE_COUNT_PATH
+        elif self.pressed_button == "boomerang":
+            count_file = BOOMERANG_COUNT_PATH
         elif self.pressed_button == "video":
             count_file = VIDEO_COUNT_PATH
 
@@ -396,6 +441,8 @@ class UserInterface(ctk.CTkFrame):
         count_file = int
         if self.pressed_button == "picture":
             count_file = PICTURE_COUNT_PATH
+        elif self.pressed_button == "boomerang":
+            count_file = BOOMERANG_COUNT_PATH
         elif self.pressed_button == "video":
             count_file = VIDEO_COUNT_PATH
 
@@ -407,6 +454,9 @@ class UserInterface(ctk.CTkFrame):
         if self.pressed_button == "picture":
             self.timer_end = time.time() + 3  # timer for 3 seconds
             self.picture_preview()  # show camera frames in the preview_label
+        elif self.pressed_button == "boomerang":
+            self.timer_end = time.time() + 2
+            self.boomerang_preview()
         elif self.pressed_button == "video":
             self.timer_end = time.time() + 10  # timer for 10 seconds
             self.video_preview()  # show camera frames in the preview_label
@@ -419,16 +469,10 @@ class UserInterface(ctk.CTkFrame):
         Update timer for picture/video
         release camera and call review_picture()
         """
-        if self.pressed_button == "picture":
-            while time.time() < self.timer_end:
-                remaining_time = int(self.timer_end - time.time())
-                self.timer_label.configure(text=f"{remaining_time}s")
-                time.sleep(0.1)
-        elif self.pressed_button == "video":
-            while time.time() < self.timer_end:
-                remaining_time = int(self.timer_end - time.time())
-                self.timer_label.configure(text=f"{remaining_time}s")
-                time.sleep(0.1)
+        while time.time() < self.timer_end:
+            remaining_time = int(self.timer_end - time.time())
+            self.timer_label.configure(text=f"{remaining_time}s")
+            time.sleep(0.1)
 
         # self.timer_label.destroy()
 
@@ -443,3 +487,15 @@ class UserInterface(ctk.CTkFrame):
     def _destroy_frame(frame):
         if frame:
             frame.destroy()
+
+    def arrange_boomerang_frames(self):
+        collected_frames = self.boomerang_frames
+        complete_boomerang = []
+        for i in range(3):
+            if i % 2 == 0:
+                for frame in collected_frames:
+                    complete_boomerang.append(frame)
+            else:
+                for frame in collected_frames[::-1]:
+                    complete_boomerang.append(frame)
+        self.boomerang_frames = complete_boomerang
