@@ -239,7 +239,7 @@ class UserInterface(ctk.CTkFrame):
             # Schedule the next frame to be played after a delay (e.g., 100 milliseconds)
             self.review_label.after(15, self.play_video_frame, frames, index + 1)
 
-    # -------------------- HELPER FUNCTIONS --------------------#
+    # -------------------- SAVE FUNCTIONS --------------------#
 
     def save(self):
         """watermark and save picture and video when enter key on keyboard is pressed"""
@@ -250,9 +250,8 @@ class UserInterface(ctk.CTkFrame):
         save_thread.start()
 
         # Destroy the existing keyboard frame if it exists and return home
-        if self.keyboard_page_frame:
-            self.keyboard_page_frame.destroy()
-            self.home_page()
+        self._destroy_frame(self.keyboard_page_frame)
+        self.home_page()
 
     def _save_and_send(self, count):
         """save picture or video and send email in a background thread"""
@@ -265,19 +264,6 @@ class UserInterface(ctk.CTkFrame):
         self._update_count(count=count)
         # send the email
         self.send_email()
-
-    def _save_picture(self, count):
-        if self.last_picture_frame is not None:
-            # Resize the frame before saving
-            resized_frame = cv2.resize(self.last_picture_frame, (
-                1280, 853))
-            # Convert the frame to RGB format
-            # frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-            # Save the resized frame as an image
-            self.picture_path = f"saved_pictures/{count}.jpeg"
-            cv2.imwrite(filename=self.picture_path, img=resized_frame)
-            # Apply watermark to the image
-            # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
 
     def _save_video(self, count):
         if self.video_frames:
@@ -293,6 +279,32 @@ class UserInterface(ctk.CTkFrame):
             video_writer.release()
             # Apply watermark to the video file
             # self.watermark.apply_video_watermark(accepted_video_path=self.video_path)
+
+    def _save_picture(self, count):
+        if self.last_picture_frame is not None:
+            # Resize the frame before saving
+            resized_frame = cv2.resize(self.last_picture_frame, (
+                1280, 853))
+            # Convert the frame to RGB format
+            # frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+            # Save the resized frame as an image
+            self.picture_path = f"saved_pictures/{count}.jpeg"
+            cv2.imwrite(filename=self.picture_path, img=resized_frame)
+            # Apply watermark to the image
+            # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
+
+    def send_email(self):
+        """send email containing picture"""
+        # get email from entry box
+        if self.pressed_button == "picture":
+            self.mail.send_email(self.cred, self.user_email, self.picture_path)
+        if self.pressed_button == "video":
+            # watermarked_video_path = self.video_path.replace('.mp4', '_watermarked.mp4')
+            self.mail.send_email(self.cred, self.user_email, self.video_path)
+
+        self.user_email = None
+
+    # -------------------- BUTTONS FUNCTIONS --------------------#
 
     def accept_button(self):
         """pressing the accept button leads to keyboard page"""
@@ -319,16 +331,40 @@ class UserInterface(ctk.CTkFrame):
         self.video_frames = []
         self.home_page()
 
-    def send_email(self):
-        """send email containing picture"""
-        # get email from entry box
-        if self.pressed_button == "picture":
-            self.mail.send_email(self.cred, self.user_email, self.picture_path)
-        if self.pressed_button == "video":
-            # watermarked_video_path = self.video_path.replace('.mp4', '_watermarked.mp4')
-            self.mail.send_email(self.cred, self.user_email, self.video_path)
+    def _create_home_page_buttons(self, button_data):
+        # Calculate the button width and height based on screen size
+        button_width = int(self.screen_width / 6)  # Divide the width equally into 6 parts for 3 buttons and gaps
+        button_height = int(self.screen_height / 5)  # Divide the height equally to create a square button
 
-        self.user_email = None
+        for i, data in enumerate(button_data):
+            image = ctk.CTkImage(light_image=Image.open(data["image_path"]), size=(button_width, button_height))
+            button = ctk.CTkButton(self.main_frame, text="", image=image)
+            button.grid(row=1, column=i, padx=(self.screen_width / 30, 0))
+            button.bind("<Button-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
+            button.bind("<ButtonRelease-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
+
+    def _select_home_page_buttons(self, event, index):
+        """
+        select what functions to call - picture, boomerang, video
+        :param event:
+        :param index: The index of the button pressed
+        """
+        actions = {0: "picture", 1: "boomerang", 2: "video"}
+        self.pressed_button = actions.get(index)
+        self.preview_page()  # Go to preview page after button is clicked
+
+    def _create_review_buttons(self):
+        buttons = [
+            {"text": "Accept", "command": self.accept_button, "col": 0, "padx": (self.screen_height / 30, 0)},
+            {"text": "Retake", "command": self.retake_button, "col": 1,
+             "padx": (self.screen_width / 30, self.screen_width / 30)},
+            {"text": "Cancel", "command": self.cancel_button, "col": 2, "padx": (0, self.screen_width / 30)},
+        ]
+        for button in buttons:
+            ctk.CTkButton(self.review_frame, text=button["text"],
+                          command=button["command"]).grid(row=1, column=button["col"], padx=button["padx"])
+
+    # -------------------- HELPER FUNCTIONS --------------------#
 
     @staticmethod
     def _configure_grid(frame, rows, columns):
@@ -403,39 +439,7 @@ class UserInterface(ctk.CTkFrame):
         self.review_label.ctk_image = ctk_image  # Avoid garbage collection
         self.review_label.configure(image=ctk_image)  # configure the label to show the image
 
-    def _destroy_frame(self, frame):
+    @staticmethod
+    def _destroy_frame(frame):
         if frame:
             frame.destroy()
-
-    def _create_home_page_buttons(self, button_data):
-        # Calculate the button width and height based on screen size
-        button_width = int(self.screen_width / 6)  # Divide the width equally into 6 parts for 3 buttons and gaps
-        button_height = int(self.screen_height / 5)  # Divide the height equally to create a square button
-
-        for i, data in enumerate(button_data):
-            image = ctk.CTkImage(light_image=Image.open(data["image_path"]), size=(button_width, button_height))
-            button = ctk.CTkButton(self.main_frame, text="", image=image)
-            button.grid(row=1, column=i, padx=(self.screen_width / 30, 0))
-            button.bind("<Button-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
-            button.bind("<ButtonRelease-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
-
-    def _select_home_page_buttons(self, event, index):
-        """
-        select what functions to call - picture, boomerang, video
-        :param event:
-        :param index: The index of the button pressed
-        """
-        actions = {0: "picture", 1: "boomerang", 2: "video"}
-        self.pressed_button = actions.get(index)
-        self.preview_page()  # Go to preview page after button is clicked
-
-    def _create_review_buttons(self):
-        buttons = [
-            {"text": "Accept", "command": self.accept_button, "col": 0, "padx": (self.screen_height / 30, 0)},
-            {"text": "Retake", "command": self.retake_button, "col": 1,
-             "padx": (self.screen_width / 30, self.screen_width / 30)},
-            {"text": "Cancel", "command": self.cancel_button, "col": 2, "padx": (0, self.screen_width / 30)},
-        ]
-        for button in buttons:
-            ctk.CTkButton(self.review_frame, text=button["text"],
-                          command=button["command"]).grid(row=1, column=button["col"], padx=button["padx"])

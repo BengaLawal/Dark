@@ -28,7 +28,7 @@ Selfie Zone is a custom application built using Python and the customtkinter lib
 ### Create a Virtual Environment
 It's recommended to create a virtual environment to manage the project's dependencies.
 
-`python -m venv venv`
+`python3 -m venv venv`
 
 ### Activate the Virtual Environment
 
@@ -41,4 +41,4 @@ It's recommended to create a virtual environment to manage the project's depende
 ### Usage
 To start the application, run the main script:
 
-`python main.py`
+`python3 main.py`
