@@ -9,6 +9,9 @@ opencv-python~=4.10.0.82
 CTkMessagebox~=2.0
 py3dns~=3.2.1
 git+https://gitea.ksol.io/karolyi/py3-validate-email@v1.0.9
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
 
 dnspython~=2.6.1
 idna~=3.3, >=2.5

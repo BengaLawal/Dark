@@ -55,6 +55,8 @@ class UserInterface(ctk.CTkFrame):
         self.picture_path = None
         self.video_path = None
 
+    # -------------------- PAGES --------------------#
+
     def home_page(self):
         """
         Set up the Main page
@@ -79,7 +81,7 @@ class UserInterface(ctk.CTkFrame):
         self._create_home_page_buttons(button_data)
 
     def preview_page(self):
-        """handles what happens after the button is pressed"""
+        """handles what happens after the button on the homepage is pressed"""
         self._destroy_frame(self.main_frame)
         self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
         self.preview_frame.pack(expand=True, fill=ctk.BOTH)
@@ -157,8 +159,8 @@ class UserInterface(ctk.CTkFrame):
 
         self.entry_frame.grid_columnconfigure(0, weight=1)
 
-    # -------------------- PICTURE --------------------#
-    def show_picture_frames(self):
+    # -------------------- PREVIEW --------------------#
+    def picture_preview(self):
         """show camera frames in preview_label"""
         try:
             # Get the latest frame and convert into Image
@@ -181,15 +183,14 @@ class UserInterface(ctk.CTkFrame):
 
             if time.time() <= self.timer_end:
                 # Repeat after an interval to capture continuously
-                self.preview_label.after(10, self.show_picture_frames)
+                self.preview_label.after(10, self.picture_preview)
             else:
                 self.cap.release()  # close the camera
                 self.review_page(self.last_picture_frame)  # pass captured image for review
         except Exception as e:
             print(f"Error in showing picture frames: {e}")
 
-    # -------------------- VIDEO --------------------#
-    def show_video_frames(self):
+    def video_preview(self):
         """show camera frames in preview_label"""
         try:
             # Capture frame-by-frame
@@ -211,7 +212,7 @@ class UserInterface(ctk.CTkFrame):
 
             if time.time() <= self.timer_end:
                 # Repeat after an interval to capture continuously
-                self.preview_label.after(20, self.show_video_frames)
+                self.preview_label.after(20, self.video_preview)
             else:
                 self.cap.release()  # close the camera
                 self.review_page(self.video_frames)  # open the review page
@@ -369,10 +370,10 @@ class UserInterface(ctk.CTkFrame):
         self.timer_start = time.time()
         if self.pressed_button == "picture":
             self.timer_end = time.time() + 3  # timer for 3 seconds
-            self.show_picture_frames()  # show camera frames in the preview_label
+            self.picture_preview()  # show camera frames in the preview_label
         elif self.pressed_button == "video":
             self.timer_end = time.time() + 10  # timer for 10 seconds
-            self.show_video_frames()  # show camera frames in the preview_label
+            self.video_preview()  # show camera frames in the preview_label
 
         self.timer_thread = threading.Thread(target=self._update_timer)
         self.timer_thread.start()
@@ -415,10 +416,10 @@ class UserInterface(ctk.CTkFrame):
             image = ctk.CTkImage(light_image=Image.open(data["image_path"]), size=(button_width, button_height))
             button = ctk.CTkButton(self.main_frame, text="", image=image)
             button.grid(row=1, column=i, padx=(self.screen_width / 30, 0))
-            button.bind("<Button-1>", lambda event, index=i: self._home_page_buttons(event, index))
-            button.bind("<ButtonRelease-1>", lambda event, index=i: self._home_page_buttons(event, index))
+            button.bind("<Button-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
+            button.bind("<ButtonRelease-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
 
-    def _home_page_buttons(self, event, index):
+    def _select_home_page_buttons(self, event, index):
         """
         select what functions to call - picture, boomerang, video
         :param event:
@@ -426,7 +427,6 @@ class UserInterface(ctk.CTkFrame):
         """
         actions = {0: "picture", 1: "boomerang", 2: "video"}
         self.pressed_button = actions.get(index)
-
         self.preview_page()  # Go to preview page after button is clicked
 
     def _create_review_buttons(self):
