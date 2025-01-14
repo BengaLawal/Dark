@@ -2,6 +2,8 @@
 
 Dark is a custom application built using Python and the customtkinter library . This application allows users to take pictures, boomerangs, and videos, preview them, and decide whether to accept, retake, or cancel the captured media.
 
+![home_page](home_page.png)
+
 
 ## Table of Contents
 <!-- TOC -->
