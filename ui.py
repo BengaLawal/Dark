@@ -5,6 +5,7 @@ from PIL import Image
 import time
 import threading
 import cv2
+from CTkMessagebox import CTkMessagebox
 # from watermark import Watermark
 from keyboard import Keyboard
 from mail import EmailSender
@@ -16,7 +17,7 @@ VIDEO_COUNT_PATH = "saved_videos/count.txt"
 
 class UserInterface(ctk.CTkFrame):
 
-    def __init__(self, master, login_cred):
+    def __init__(self, master, login_cred, logger):
         super().__init__(master)
         self.master = master
         # self.watermark = Watermark()
@@ -84,27 +85,40 @@ class UserInterface(ctk.CTkFrame):
 
     def preview_page(self):
         """handles what happens after the button on the homepage is pressed"""
-        self._destroy_frame(self.main_frame)
-        self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
-        self.preview_frame.pack(expand=True, fill=ctk.BOTH)
+        try:
+            self._destroy_frame(self.main_frame)
+            self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
+            self.preview_frame.pack(expand=True, fill=ctk.BOTH)
 
-        self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,
-                                          height=self.screen_height)
-        self.preview_label.grid(row=0, column=0, columnspan=3)
+            self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,
+                                              height=self.screen_height)
+            self.preview_label.grid(row=0, column=0, columnspan=3)
 
-        self.timer_label = ctk.CTkLabel(self.preview_frame, text="", text_color="red", bg_color="transparent",
-                                        font=("Helvetica", 25, "bold"))
-        self.timer_label.place(relx=0.5, rely=0.5, anchor="center")  # place over preview_label
+            self.timer_label = ctk.CTkLabel(self.preview_frame, text="", text_color="red", bg_color="transparent",
+                                            font=("Helvetica", 25, "bold"))
+            self.timer_label.place(relx=0.5, rely=0.5, anchor="center")  # place over preview_label
 
-        self.preview_size = self.screen_height * 80 / 100
+            self.preview_size = self.screen_height * 80 / 100
 
-        # open camera
-        self.cap = cv2.VideoCapture(0)
-        if not self.cap.isOpened():
-            print("Cannot open camera")
-            exit()
+            # open camera with retry mechanism
+            max_retries = 3
+            retry_count = 0
+            while retry_count < max_retries:
+                try:
+                    self.cap = cv2.VideoCapture(0)
+                    if self.cap.isOpened():
+                        break
+                    retry_count += 1
+                    time.sleep(1)  # Wait before retrying
+                except Exception as e:
+                    print(f"Camera initialization attempt {retry_count + 1} failed: {e}")
+                    retry_count += 1
 
-        self._start_timer()
+            if not self.cap.isOpened():
+                raise RuntimeError("Failed to initialize camera after multiple attempts")
+
+        except Exception as e:
+            self._handle_camera_error(str(e))
 
     def review_page(self, object_):
         """
@@ -205,7 +219,7 @@ class UserInterface(ctk.CTkFrame):
             self.boomerang_frames.append(frame)
 
         if current_time <= self.timer_end:
-            self.preview_label.after(20, lambda: self.update_preview())
+            self.preview_label.after(10, lambda: self.update_preview())
         else:
             self.cap.release()
             self.arrange_boomerang_frames()
@@ -469,3 +483,14 @@ class UserInterface(ctk.CTkFrame):
                 for frame in collected_frames[::-1]:
                     complete_boomerang.append(frame)
         self.boomerang_frames = complete_boomerang
+
+    def _handle_camera_error(self, error_message):
+        """Handle camera-related errors"""
+        messagebox = CTkMessagebox(
+            title="Camera Error",
+            message=f"Camera error: {error_message}\nPlease check your camera connection.",
+            icon="cancel"
+        )
+        if messagebox.get() == "OK":
+            self._destroy_frame(self.preview_frame)
+            self.home_page()
