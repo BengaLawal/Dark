@@ -8,14 +8,16 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from googleapiclient.errors import HttpError
 from config import configuration as config
+from dotenv import load_dotenv
 from email import encoders
 
+load_dotenv()
 
 class EmailSender:
     """A class to send emails with attachments using Gmail API."""
 
     def __init__(self):
-        self.sender = "olawal023@student.wethinkcode.co.za"
+        self.sender = os.getenv("SENDER_EMAIL")
         self.subject = 'Picture Attachment'
         self.body = "Enjoy your photos!\nDon't forget to share using #RUSHCLAREMONT"
 

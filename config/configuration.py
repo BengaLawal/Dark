@@ -3,11 +3,18 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from dotenv import load_dotenv
+from encryption import encrypt, decrypt
+
+load_dotenv()
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-CREDENTIALS_FILE = "config/.credentials.json"
-TOKEN_FILE = f"{os.path.expanduser('~')}/.token.json"  # saves token file in home dir
+CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH")
+TOKEN_FILE = os.getenv("TOKEN_PATH") # saves token file in home dir
+
+print(CREDENTIALS_FILE)
+print(TOKEN_FILE)
 
 
 def login():
@@ -34,8 +41,14 @@ def save_token(creds, path):
     """
     The function `save_token()` save the token for the next run
     """
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
     with open(path, 'w') as token:
         token.write(creds.to_json())
+
+    # Restrict permissions
+    os.chmod(path, 0o600)  # Owner-only read/write
 
 
 def service_build(creds):
