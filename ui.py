@@ -1,52 +1,52 @@
-import os
 import tkinter as tk
 import customtkinter as ctk
+import numpy as np
 from PIL import Image
 import time
 import threading
 import cv2
 from CTkMessagebox import CTkMessagebox
-# from watermark import Watermark
 from keyboard import Keyboard
 from mail import EmailSender
-
-PICTURE_COUNT_PATH = "saved_pictures/count.txt"
-BOOMERANG_COUNT_PATH = "saved_boomerangs/count.txt"
-VIDEO_COUNT_PATH = "saved_videos/count.txt"
-
+from file_manager import FileManager, MediaType
+from camera_manager import CameraManager, OpenCVCamera
 
 class UserInterface(ctk.CTkFrame):
-
-    def __init__(self, master, login_cred, logger):
+    def __init__(self, master, login_cred, logger = None):
         super().__init__(master)
         self.master = master
-        # self.watermark = Watermark()
-        self.mail = EmailSender()
+        self.mail = EmailSender(logger)
         self.cred = login_cred
 
+        self.logger = logger.getChild(self.__class__.__name__)
+
+        # Initialize counts file
+        FileManager.initialize_counts_file()
+
+        # Screen dimensions
         self.screen_width = self.master.winfo_screenwidth()
         self.screen_height = self.master.winfo_screenheight()
 
+        # UI components
         self.main_frame = None
         self.pressed_button = None
-        self.home_page()  # initialise home page
-
-        self.cap = None
+        self.camera_manager = None
         self.preview_frame = None
         self.preview_label = None
         self.review_frame = None
         self.review_label = None
         self.preview_size = None
-
         self.timer_label = None
         self.timer_start = None
         self.timer_end = None
         self.timer_thread = None
 
+        # Media storage
         self.last_picture_frame = None
         self.boomerang_frames = []
         self.video_frames = []
 
+        # Keyboard components
         self.keyboard_page_frame = None
         self.entry_frame = None
         self.keyboard_frame = None
@@ -55,437 +55,303 @@ class UserInterface(ctk.CTkFrame):
         self.email_entry_text = None
         self.user_email = None
 
-        self.picture_path = None
-        self.video_path = None
+        # File paths
+        self.media_path = None
 
-    # -------------------- PAGES --------------------#
+        # Initialize home page
+        self.home_page()
 
     def home_page(self):
-        """
-        Set up the Main page
-        """
-        self.master.title("Darkroom Booth")
-        self.master.attributes("-fullscreen", True)
+        """Set up the Main page"""
+        self.logger.info("Initializing home page")
+        try:
+            self.master.title("Darkroom Booth")
+            self.master.attributes("-fullscreen", True)
 
-        self.main_frame = ctk.CTkFrame(self.master, bg_color="red")
-        self.main_frame.pack(expand=True, fill=ctk.BOTH)
-        self._configure_grid(self.main_frame, rows=2, columns=3)  # Divide main_frame into a 2x3 grid
+            self.main_frame = ctk.CTkFrame(self.master, bg_color="red")
+            self.main_frame.pack(expand=True, fill=ctk.BOTH)
+            self._configure_grid(self.main_frame, rows=2, columns=3)
 
-        # Top Row: Selfie Zone Title
-        title_label = ctk.CTkLabel(self.main_frame, text="Selfie Zone",
-                                   font=("Helvetica", int(self.screen_height / 20), "bold"))
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, self.screen_height / 10))
+            title_label = ctk.CTkLabel(self.main_frame, text="Selfie Zone",
+                                       font=("Helvetica", int(self.screen_height / 20), "bold"))
+            title_label.grid(row=0, column=0, columnspan=3, pady=(0, self.screen_height / 10))
 
-        button_data = [
-            {"image_path": "./button_images/picture.png"},
-            {"image_path": "./button_images/boomerang.png"},
-            {"image_path": "./button_images/video.png"},
-        ]
-        self._create_home_page_buttons(button_data)
+            button_data = [
+                {"image_path": "./button_images/picture.png", "media_type": MediaType.PICTURE},
+                {"image_path": "./button_images/boomerang.png", "media_type": MediaType.BOOMERANG},
+                {"image_path": "./button_images/video.png", "media_type": MediaType.VIDEO},
+            ]
+            self._create_home_page_buttons(button_data)
+        except Exception as e:
+            self.logger.error(f"Error in home page initialization: {e}")
 
     def preview_page(self):
-        """handles what happens after the button on the homepage is pressed"""
+        """Handles what happens after the button on the homepage is pressed"""
+        self.logger.info("Initializing preview page")
         try:
             self._destroy_frame(self.main_frame)
-            self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
-            self.preview_frame.pack(expand=True, fill=ctk.BOTH)
-
-            self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,
-                                              height=self.screen_height)
-            self.preview_label.grid(row=0, column=0, columnspan=3)
-
-            self.timer_label = ctk.CTkLabel(self.preview_frame, text="", text_color="red", bg_color="transparent",
-                                            font=("Helvetica", 25, "bold"))
-            self.timer_label.place(relx=0.5, rely=0.5, anchor="center")  # place over preview_label
-
-            self.preview_size = self.screen_height * 80 / 100
-
-            # open camera with retry mechanism
-            max_retries = 3
-            retry_count = 0
-            while retry_count < max_retries:
-                try:
-                    self.cap = cv2.VideoCapture(0)
-                    if self.cap.isOpened():
-                        break
-                    retry_count += 1
-                    time.sleep(1)  # Wait before retrying
-                except Exception as e:
-                    print(f"Camera initialization attempt {retry_count + 1} failed: {e}")
-                    retry_count += 1
-
-            if not self.cap.isOpened():
-                raise RuntimeError("Failed to initialize camera after multiple attempts")
-
+            self._setup_preview_frame()
+            self._initialize_camera()
+            self._start_timer()
         except Exception as e:
             self._handle_camera_error(str(e))
 
-    def review_page(self, object_):
-        """
-        Review the image/video that was taken
-        Show Accept, Retake and Return buttons
-        :param object_: function takes a PIL image, or video frames
-        """
-        self._destroy_frame(self.preview_frame)
+    def review_page(self, media_content):
+        """Review the captured media content"""
+        self.logger.info("Initializing review page")
+        try:
+            self._destroy_frame(self.main_frame)
+            self._setup_review_frame()
+            self._display_media_content(media_content)
+            self._create_review_buttons()
+        except Exception as e:
+            self.logger.error(f"Error in review page initialization: {e}")
+
+    def _setup_preview_frame(self):
+        """Set up the preview frame and labels"""
+        self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
+        self.preview_frame.pack(expand=True, fill=ctk.BOTH)
+
+        self.preview_label = ctk.CTkLabel(self.preview_frame, text="", width=self.screen_width,
+                                          height=self.screen_height)
+        self.preview_label.grid(row=0, column=0, columnspan=3)
+
+        self.timer_label = ctk.CTkLabel(self.preview_frame, text="", text_color="red",
+                                        bg_color="transparent", font=("Helvetica", 25, "bold"))
+        self.timer_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        self.preview_size = self.screen_height * 80 / 100
+
+    def _initialize_camera(self):
+        """Initialize camera with retry mechanism"""
+        try:
+            camera = OpenCVCamera()
+            self.camera_manager = CameraManager(camera)
+            if not self.camera_manager.initialize_camera():
+                raise RuntimeError("Failed to initialize camera after multiple attempts")
+        except Exception as e:
+            raise RuntimeError(f"Camera initialization failed: {str(e)}")
+
+    def _setup_review_frame(self):
+        """Set up the review frame and label"""
         self.review_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
         self.review_frame.pack(expand=True, fill=ctk.BOTH)
+        self._configure_grid(self.review_frame, rows=2, columns=3)
 
         self.review_label = ctk.CTkLabel(self.review_frame, text="")
         self.review_label.grid(row=0, column=0, columnspan=3)
 
-        if self.pressed_button == "picture":
-            self._display_frame(object_)
-        if self.pressed_button == "boomerang":
-            self.play_video_frame(object_, 1)
-        if self.pressed_button == "video":
-            self.play_video_frame(object_, 1)
-
-        self._configure_grid(self.review_frame, rows=2, columns=3)
-        self._create_review_buttons()
-
-    def keyboard_page(self):
-        """shows the keyboard"""
-        # cancel button returns to homepage
-        self._destroy_frame(self.review_frame)
-
-        # calculate the desired dimensions of the keyboard
-        keyboard_width = self.screen_width
-        keyboard_height = self.screen_height * 70 / 100
-
-        # create a new frame for keyboard and entry box
-        self.keyboard_page_frame = ctk.CTkFrame(self.master, )
-        self.keyboard_page_frame.pack(side="bottom", fill=ctk.BOTH, expand=True)
-
-        # keyboard frame
-        self.keyboard_frame = ctk.CTkFrame(self.keyboard_page_frame, width=keyboard_width, height=keyboard_height)
-        self.keyboard_frame.pack(side="bottom", pady=(0, 10))
-
-        # Entry box for email address
-        self.entry_frame = ctk.CTkFrame(self.keyboard_frame)
-        self.entry_frame.grid(row=0, column=0, columnspan=11, sticky="nsew")
-        # entry box
-        self.email_entry_text = tk.StringVar()
-        self.email_entry = ctk.CTkEntry(self.entry_frame, textvariable=self.email_entry_text,
-                                        width=self.screen_width, height=self.screen_height * 10 / 100)
-        self.email_entry.focus()  # cursor goes to this input field
-        self.email_entry.pack(side="bottom")
-
-        # make keyboard buttons using Keyboard class
-        self.keyboard = Keyboard(master=self.keyboard_frame, width=keyboard_width, height=keyboard_height,
-                                 entry_box=self.email_entry, cancel=self.cancel_button, enter=self.save)
-
-        self.entry_frame.grid_columnconfigure(0, weight=1)
-
-    # -------------------- PREVIEW --------------------#
+    def _display_media_content(self, content):
+        """Display the appropriate media content based on type"""
+        display_methods = {
+            MediaType.PICTURE: lambda: self._display_frame(content),
+            MediaType.BOOMERANG: lambda: self.play_video_frame(content, 1),
+            MediaType.VIDEO: lambda: self.play_video_frame(content, 1)
+        }
+        display_methods[self.pressed_button]()
 
     def update_preview(self):
-        """Update the preview label with the latest frame and handle frame storage based on capture type."""
+        """Update the preview label with the latest frame"""
         try:
-            # Get the latest frame and convert into Image
-            ret, frame = self.cap.read()
-            if not ret:
+            pil_image = self.camera_manager.capture_and_process_frame(
+                preview_size=(int(self.preview_size), int(self.preview_size))
+            )
+            if pil_image is None:
                 raise ValueError("Failed to capture video")
 
-            # Convert the latest frame to RGB format and to PIL Image
-            cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(cv2image)
-            ctk_image = ctk.CTkImage(dark_image=img, size=(self.preview_size, self.preview_size))
-            self.preview_label.ctk_image = ctk_image  # avoid garbage collection
+            ctk_image = ctk.CTkImage(dark_image=pil_image,
+                                   size=(self.preview_size, self.preview_size))
             self.preview_label.configure(image=ctk_image)
+            self.preview_label.ctk_image = ctk_image  # avoid garbage collection
 
             current_time = time.time()
-            if self.pressed_button == 'picture':
-                self.handle_picture_preview(current_time, frame)
-            elif self.pressed_button == 'boomerang':
-                self.handle_boomerang_preview(current_time, frame)
-            elif self.pressed_button == 'video':
-                self.handle_video_preview(current_time, frame)
+            self._handle_media_capture(current_time, pil_image)
 
         except Exception as e:
-            print(f"Error in showing {self.pressed_button} frames: {e}")
+            self.logger.error(f"Error in showing {self.pressed_button} frames: {e}")
 
-    def handle_picture_preview(self, current_time, frame):
+    def _handle_media_capture(self, current_time, frame):
+        """Handle media capture based on type"""
+        capture_handlers = {
+            MediaType.PICTURE: self._handle_picture_capture,
+            MediaType.BOOMERANG: self._handle_boomerang_capture,
+            MediaType.VIDEO: self._handle_video_capture
+        }
+        capture_handlers[self.pressed_button](current_time, frame)
+
+    def _handle_picture_capture(self, current_time, frame):
+        """Handle picture capture timing and storage"""
         if current_time - self.timer_start > 3:
             self.last_picture_frame = frame
 
         if current_time <= self.timer_end:
-            self.preview_label.after(10, lambda: self.update_preview())
+            self.preview_label.after(10, self.update_preview)
         else:
-            self.cap.release()
+            self.camera_manager.release_camera()
             self.review_page(self.last_picture_frame)
 
-    def handle_boomerang_preview(self, current_time, frame):
+    def _handle_boomerang_capture(self, current_time, frame):
+        """Handle boomerang capture timing and storage"""
         if current_time - self.timer_start > 0:
             self.boomerang_frames.append(frame)
 
         if current_time <= self.timer_end:
-            self.preview_label.after(10, lambda: self.update_preview())
+            self.preview_label.after(10, self.update_preview)
         else:
-            self.cap.release()
+            self.camera_manager.release_camera()
             self.arrange_boomerang_frames()
             self.review_page(self.boomerang_frames)
 
-    def handle_video_preview(self, current_time, frame):
+    def _handle_video_capture(self, current_time, frame):
+        """Handle video capture timing and storage"""
         if current_time - self.timer_start > 3:
             self.video_frames.append(frame)
 
         if current_time <= self.timer_end:
-            self.preview_label.after(20, lambda: self.update_preview())
+            self.preview_label.after(20, self.update_preview)
         else:
-            self.cap.release()
+            self.camera_manager.release_camera()
             self.review_page(self.video_frames)
 
-    def play_video_frame(self, frames, index):
-        """
-        Play next frame in video_frames list.
-        :param frames: list of video_frames
-        :param index: index of next frame to play
-        """
-        if index < len(frames):
-            # Convert the frame to RGB format
-            cv2image = cv2.cvtColor(frames[index], cv2.COLOR_BGR2RGB)
-            # Convert the NumPy array to PIL Image
-            img = Image.fromarray(cv2image)
-
-            # Create a ctk.CTkImage from the frame
-            ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, self.screen_height * 0.9))
-            self.review_label.ctk_image = ctk_image  # Avoid garbage collection
-            self.review_label.configure(image=ctk_image)
-
-            # Schedule the next frame to be played after a delay (e.g., 100 milliseconds)
-            self.review_label.after(15, self.play_video_frame, frames, index + 1)
-
-    # -------------------- SAVE FUNCTIONS --------------------#
-
+    # Save and send functions
     def save(self):
-        """watermark and save picture and video when enter key on keyboard is pressed"""
-        self.user_email = self.email_entry.get()  # get the typed in user password
-        count = self._get_count()
-
-        save_thread = threading.Thread(target=self._save_and_send, args=(count,))
+        """Save media and send email"""
+        self.user_email = self.email_entry.get()
+        save_thread = threading.Thread(target=self._save_and_send)
         save_thread.start()
-
-        # Destroy the existing keyboard frame if it exists and return home
         self._destroy_frame(self.keyboard_page_frame)
         self.home_page()
 
-    def _save_and_send(self, count):
-        """save picture or video and send email in a background thread"""
-        if self.pressed_button == "picture":
-            self._save_picture(count)
-        if self.pressed_button == "boomerang":
-            self._save_boomerang(count)
-        if self.pressed_button == "video":
-            self._save_video(count)
-
-        # update the number in count.txt
-        self._update_count(count=count)
-        # send the email
+    def _save_and_send(self):
+        """Save media content and send email in background thread"""
+        count = FileManager.increment_count(self.pressed_button)
+        save_methods = {
+            MediaType.PICTURE: self._save_picture,
+            MediaType.BOOMERANG: self._save_boomerang,
+            MediaType.VIDEO: self._save_video
+        }
+        save_methods[self.pressed_button](count)
         self.send_email()
 
     def _save_picture(self, count):
+        """Save picture with resizing"""
         if self.last_picture_frame is not None:
-            # Resize the frame before saving
-            resized_frame = cv2.resize(self.last_picture_frame, (
-                1280, 853))
-            # Convert the frame to RGB format
-            # frame_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-            # Save the resized frame as an image
-            self.picture_path = f"saved_pictures/{count}.jpeg"
-            cv2.imwrite(filename=self.picture_path, img=resized_frame)
-            # Apply watermark to the image
-            # self.watermark.apply_picture_watermark(accepted_picture_path=self.picture_path)
+            # Convert PIL Image to numpy array if it's a PIL Image
+            if isinstance(self.last_picture_frame, Image.Image):
+                # Convert PIL Image to numpy array
+                frame_array = np.array(self.last_picture_frame)
+                # Convert RGB to BGR (OpenCV format)
+                frame_array = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
+            else:
+                frame_array = self.last_picture_frame
+
+
+            resized_frame = cv2.resize(frame_array, (1280, 853))
+            self.media_path = FileManager.get_save_path(MediaType.PICTURE, count)
+            cv2.imwrite(filename=self.media_path, img=resized_frame)
 
     def _save_boomerang(self, count):
-        pass
+        """Save boomerang frames"""
+        pass  # Implement boomerang saving logic
 
     def _save_video(self, count):
+        """Save video frames"""
         if self.video_frames:
-            self.video_path = f"saved_videos/{count}.mp4"
-            # Create a VideoWriter object to save the frames as a video file
+            self.media_path = FileManager.get_save_path(MediaType.VIDEO, count)
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            # VideoWriter args - path, fps, frame size
-            video_writer = cv2.VideoWriter(self.video_path, fourcc, 20.0, (640, 480))
-            # Write each frame to the video file
+            video_writer = cv2.VideoWriter(self.media_path, fourcc, 20.0, (640, 480))
+
             for frame in self.video_frames:
-                video_writer.write(frame)  # write the flipped frame
-            # Release the video writer
+                if isinstance(frame, Image.Image):
+                    frame_array = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
+                else:
+                    frame_array = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                video_writer.write(frame_array)
             video_writer.release()
-            # Apply watermark to the video file
-            # self.watermark.apply_video_watermark(accepted_video_path=self.video_path)
 
     def send_email(self):
-        """send email containing picture"""
-        # get email from entry box
-        if self.pressed_button == "picture":
-            self.mail.send_email(self.cred, self.user_email, self.picture_path)
-        # elif self.pressed_button == "boomerang":
-            # self.mail.send_email(self.cred, self.user_email, self.boomerang_path)
-        if self.pressed_button == "video":
-            # watermarked_video_path = self.video_path.replace('.mp4', '_watermarked.mp4')
-            self.mail.send_email(self.cred, self.user_email, self.video_path)
-
+        """Send email with media attachment"""
+        if self.media_path and self.user_email:
+            self.mail.send_email(self.cred, self.user_email, self.media_path)
         self.user_email = None
 
-    # -------------------- BUTTONS FUNCTIONS --------------------#
+    # UI Helper Methods
+    def keyboard_page(self):
+        """Set up keyboard page"""
+        self._destroy_frame(self.review_frame)
+        self._setup_keyboard()
 
+    def _setup_keyboard(self):
+        """Set up keyboard UI components"""
+        keyboard_width = self.screen_width
+        keyboard_height = self.screen_height * 70 / 100
+
+        self.keyboard_page_frame = ctk.CTkFrame(self.master)
+        self.keyboard_page_frame.pack(side="bottom", fill=ctk.BOTH, expand=True)
+
+        self.keyboard_frame = ctk.CTkFrame(self.keyboard_page_frame, width=keyboard_width, height=keyboard_height)
+        self.keyboard_frame.pack(side="bottom", pady=(0, 10))
+
+        self._setup_email_entry()
+        self._setup_keyboard_buttons(keyboard_width, keyboard_height)
+
+    def _setup_email_entry(self):
+        """Set up email entry field"""
+        self.entry_frame = ctk.CTkFrame(self.keyboard_frame)
+        self.entry_frame.grid(row=0, column=0, columnspan=11, sticky="nsew")
+        self.email_entry_text = tk.StringVar()
+        self.email_entry = ctk.CTkEntry(self.entry_frame, textvariable=self.email_entry_text,
+                                        width=self.screen_width, height=self.screen_height * 10 / 100)
+        self.email_entry.focus()
+        self.email_entry.pack(side="bottom")
+        self.entry_frame.grid_columnconfigure(0, weight=1)
+
+    def _setup_keyboard_buttons(self, keyboard_width, keyboard_height):
+        """Set up keyboard buttons"""
+        self.keyboard = Keyboard(master=self.keyboard_frame, width=keyboard_width, height=keyboard_height,
+                                 entry_box=self.email_entry, cancel=self.cancel_button, enter=self.save)
+
+    # Button Actions
     def accept_button(self):
-        """pressing the accept button leads to keyboard page"""
+        """Handle accept button press"""
         self.keyboard_page()
 
     def retake_button(self):
-        """Retake the picture"""
+        """Handle retake button press"""
         self._destroy_frame(self.review_frame)
-        if self.pressed_button == "picture":
-            self.last_picture_frame = None  # get rid of the last picture taken
-        elif self.pressed_button == "boomerang":
-            self.boomerang_frames = []
-        elif self.pressed_button == "video":
-            self.video_frames = []  # get rid of the old video by making the list empty again
-
+        self._clear_media_buffers()
         self.preview_page()
 
     def cancel_button(self):
-        """Return to main page"""
+        """Handle cancel button press"""
         self._destroy_frame(self.keyboard_page_frame)
         self._destroy_frame(self.review_frame)
+        self._clear_media_buffers()
+        self.home_page()
+
+    def _clear_media_buffers(self):
+        """Clear all media buffers"""
         self.last_picture_frame = None
         self.boomerang_frames = []
         self.video_frames = []
-        self.home_page()
 
-    def _create_home_page_buttons(self, button_data):
-        # Calculate the button width and height based on screen size
-        button_width = int(self.screen_width / 6)  # Divide the width equally into 6 parts for 3 buttons and gaps
-        button_height = int(self.screen_height / 5)  # Divide the height equally to create a square button
-
-        for i, data in enumerate(button_data):
-            image = ctk.CTkImage(light_image=Image.open(data["image_path"]), size=(button_width, button_height))
-            button = ctk.CTkButton(self.main_frame, text="", image=image)
-            button.grid(row=1, column=i, padx=(self.screen_width / 30, 0))
-            button.bind("<Button-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
-            button.bind("<ButtonRelease-1>", lambda event, index=i: self._select_home_page_buttons(event, index))
-
-    def _select_home_page_buttons(self, event, index):
-        """
-        select what functions to call - picture, boomerang, video
-        :param event:
-        :param index: The index of the button pressed
-        """
-        actions = {0: "picture", 1: "boomerang", 2: "video"}
-        self.pressed_button = actions.get(index)
-        self.preview_page()  # Go to preview page after button is clicked
-
-    def _create_review_buttons(self):
-        buttons = [
-            {"text": "Accept", "command": self.accept_button, "col": 0, "padx": (self.screen_height / 30, 0)},
-            {"text": "Retake", "command": self.retake_button, "col": 1,
-             "padx": (self.screen_width / 30, self.screen_width / 30)},
-            {"text": "Cancel", "command": self.cancel_button, "col": 2, "padx": (0, self.screen_width / 30)},
-        ]
-        for button in buttons:
-            ctk.CTkButton(self.review_frame, text=button["text"],
-                          command=button["command"]).grid(row=1, column=button["col"], padx=button["padx"])
-
-    # -------------------- HELPER FUNCTIONS --------------------#
-
+    # Helper Methods
     @staticmethod
     def _configure_grid(frame, rows, columns):
+        """Configure grid layout"""
         for row in range(rows):
             frame.grid_rowconfigure(row, weight=1)
         for col in range(columns):
             frame.grid_columnconfigure(col, weight=1)
 
-    def _get_count(self):
-        """Read count.txt"""
-        count_file = ""
-        if self.pressed_button == "picture":
-            count_file = PICTURE_COUNT_PATH
-        elif self.pressed_button == "boomerang":
-            count_file = BOOMERANG_COUNT_PATH
-        elif self.pressed_button == "video":
-            count_file = VIDEO_COUNT_PATH
-
-        if os.path.exists(count_file):
-            with open(count_file, "r") as file:
-                count_ = int(file.read())
-                return count_
-        else:
-            with open(count_file, "x") as file:  # create a new file and open it for writing
-                count_ = 0
-                file.write(str(count_))
-                return count_
-
-    def _update_count(self, count):
-        """update the count.txt"""
-        count_file = int
-        if self.pressed_button == "picture":
-            count_file = PICTURE_COUNT_PATH
-        elif self.pressed_button == "boomerang":
-            count_file = BOOMERANG_COUNT_PATH
-        elif self.pressed_button == "video":
-            count_file = VIDEO_COUNT_PATH
-
-        with open(count_file, "w") as file:
-            file.write(str(count + 1))
-
-    def _start_timer(self):
-        self.timer_start = time.time()
-        if self.pressed_button == "picture":
-            self.timer_end = time.time() + 3  # timer for 3 seconds
-        elif self.pressed_button == "boomerang":
-            self.timer_end = time.time() + 2
-        elif self.pressed_button == "video":
-            self.timer_end = time.time() + 10  # timer for 10 seconds
-
-        self.update_preview()  # show camera frames in the preview_label
-
-        self.timer_thread = threading.Thread(target=self._update_timer)
-        self.timer_thread.start()
-
-    def _update_timer(self):
-        """
-        Update timer for picture/video
-        release camera and call review_picture()
-        """
-        while time.time() < self.timer_end:
-            remaining_time = int(self.timer_end - time.time())
-            # Check if timer_label still exists
-            if self.timer_label and self.timer_label.winfo_exists():
-                self.timer_label.configure(text=f"{remaining_time}s")
-            time.sleep(0.1)
-
-        # Ensure the label is destroyed after the timer ends
-        if self.timer_label and self.timer_label.winfo_exists():
-            self.timer_label.destroy()
-
-    def _display_frame(self, frame):
-        cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
-        img = Image.fromarray(cv2image)  # Convert the NumPy array to PIL Image
-        ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, self.screen_height * 0.9))
-        self.review_label.ctk_image = ctk_image  # Avoid garbage collection
-        self.review_label.configure(image=ctk_image)  # configure the label to show the image
-
     @staticmethod
     def _destroy_frame(frame):
+        """Safely destroy a frame"""
         if frame:
             frame.destroy()
 
-    def arrange_boomerang_frames(self):
-        """Arrange the boomerang_frames to an actual boomerang"""
-        collected_frames = self.boomerang_frames
-        complete_boomerang = []
-        for i in range(3):
-            if i % 2 == 0:
-                for frame in collected_frames:
-                    complete_boomerang.append(frame)
-            else:
-                for frame in collected_frames[::-1]:
-                    complete_boomerang.append(frame)
-        self.boomerang_frames = complete_boomerang
-
     def _handle_camera_error(self, error_message):
-        """Handle camera-related errors"""
+        """Handle camera errors"""
         messagebox = CTkMessagebox(
             title="Camera Error",
             message=f"Camera error: {error_message}\nPlease check your camera connection.",
@@ -494,3 +360,102 @@ class UserInterface(ctk.CTkFrame):
         if messagebox.get() == "OK":
             self._destroy_frame(self.preview_frame)
             self.home_page()
+
+    def _start_timer(self):
+        """Start the capture timer"""
+        self.timer_start = time.time()
+        timer_durations = {
+            MediaType.PICTURE: 3,
+            MediaType.BOOMERANG: 2,
+            MediaType.VIDEO: 10
+        }
+        self.timer_end = time.time() + timer_durations[self.pressed_button]
+        self.update_preview()
+        self.timer_thread = threading.Thread(target=self._update_timer)
+        self.timer_thread.start()
+
+    def _update_timer(self):
+        """Update the timer display"""
+
+        while time.time() < self.timer_end:
+            remaining_time = int(self.timer_end - time.time())
+            if self.timer_label and self.timer_label.winfo_exists():
+                self.timer_label.configure(text=f"{remaining_time}s")
+            time.sleep(0.1)
+
+        if self.timer_label and self.timer_label.winfo_exists():
+            self.timer_label.after(0, self.timer_label.destroy())
+
+    def arrange_boomerang_frames(self):
+        """Arrange frames for boomerang effect"""
+        collected_frames = self.boomerang_frames
+        complete_boomerang = []
+        for i in range(3):
+            frames = collected_frames if i % 2 == 0 else collected_frames[::-1]
+            complete_boomerang.extend(frames)
+        self.boomerang_frames = complete_boomerang
+
+    def play_video_frame(self, frames, index):
+        """Play video frames sequentially"""
+        if index < len(frames):
+            frame = frames[index]
+            if isinstance(frame, Image.Image):
+                cv2image = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
+                img = Image.fromarray(cv2image)
+            else:
+                cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(cv2image)
+            ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, self.screen_height * 0.9))
+            self.review_label.ctk_image = ctk_image
+            self.review_label.configure(image=ctk_image)
+            self.review_label.after(15, self.play_video_frame, frames, index + 1)
+
+    def _create_home_page_buttons(self, button_data):
+        """Create home page buttons"""
+        button_width = int(self.screen_width / 6)
+        button_height = int(self.screen_height / 5)
+
+        for i, data in enumerate(button_data):
+            image = ctk.CTkImage(light_image=Image.open(data["image_path"]),
+                                 size=(button_width, button_height))
+            button = ctk.CTkButton(self.main_frame, text="", image=image)
+            button.grid(row=1, column=i, padx=(self.screen_width / 30, 0))
+            button.bind("<Button-1>",
+                        lambda event, media_type=data["media_type"]: self._handle_button_press(event, media_type))
+            button.bind("<ButtonRelease-1>",
+                        lambda event, media_type=data["media_type"]: self._handle_button_press(event, media_type))
+
+    def _handle_button_press(self, event, media_type):
+        """Handle home page button press"""
+        self.pressed_button = media_type
+        self.preview_page()
+
+    def _create_review_buttons(self):
+        """Create review page buttons"""
+        buttons = [
+            {"text": "Accept", "command": self.accept_button, "col": 0,
+             "padx": (self.screen_height / 30, 0)},
+            {"text": "Retake", "command": self.retake_button, "col": 1,
+             "padx": (self.screen_width / 30, self.screen_width / 30)},
+            {"text": "Cancel", "command": self.cancel_button, "col": 2,
+             "padx": (0, self.screen_width / 30)},
+        ]
+        for button in buttons:
+            ctk.CTkButton(
+                self.review_frame,
+                text=button["text"],
+                command=button["command"]
+            ).grid(row=1, column=button["col"], padx=button["padx"])
+
+    def _display_frame(self, frame):
+        """Display a single frame"""
+        try:
+            frame_array = np.array(frame)
+            cv2image = cv2.cvtColor(frame_array, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
+            img = Image.fromarray(cv2image)
+            ctk_image = ctk.CTkImage(dark_image=img,
+                                     size=(self.screen_width, self.screen_height * 0.9))
+            self.review_label.ctk_image = ctk_image
+            self.review_label.configure(image=ctk_image)
+        except Exception as e:
+            self.logger.error(f"Error in displaying frame: {e}")

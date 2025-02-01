@@ -16,10 +16,11 @@ load_dotenv()
 class EmailSender:
     """A class to send emails with attachments using Gmail API."""
 
-    def __init__(self):
+    def __init__(self, logger):
         self.sender = os.getenv("SENDER_EMAIL")
         self.subject = 'Picture Attachment'
         self.body = "Enjoy your photos!\nDon't forget to share using #RUSHCLAREMONT"
+        self.logger = logger.getChild(self.__class__.__name__)
 
     def send_email(self, creds, receiver_email, file_path):
         """
@@ -36,9 +37,9 @@ class EmailSender:
             service = config.service_build(creds)
             message = self._create_message(receiver_email, file_path)
             self._send_message(service, message)
-            print("Email sent successfully")
+            self.logger.info("Email sent successfully to %s", receiver_email)
         except HttpError as error:
-            print(f"Failed to send email: {error}")
+            self.logger.error("An error occurred: %s", error)
             message = None
         return message
 
