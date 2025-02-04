@@ -87,12 +87,12 @@ class UserInterface(ctk.CTkFrame):
 
     def preview_page(self):
         """Handles what happens after the button on the homepage is pressed"""
-        self.logger.info("Initializing preview page")
         try:
             self._destroy_frame(self.main_frame)
             self._setup_preview_frame()
             self._initialize_camera()
             self._start_timer()
+            self.logger.info("Preview page initialized")
         except Exception as e:
             self._handle_camera_error(str(e))
 
@@ -100,10 +100,11 @@ class UserInterface(ctk.CTkFrame):
         """Review the captured media content"""
         self.logger.info("Initializing review page")
         try:
-            self._destroy_frame(self.main_frame)
+            self._destroy_frame(self.preview_frame)
             self._setup_review_frame()
             self._display_media_content(media_content)
             self._create_review_buttons()
+            self.logger.info("Review page initialized")
         except Exception as e:
             self.logger.error(f"Error in review page initialization: {e}")
 
@@ -311,7 +312,7 @@ class UserInterface(ctk.CTkFrame):
         self.keyboard = Keyboard(master=self.keyboard_frame, width=keyboard_width, height=keyboard_height,
                                  entry_box=self.email_entry, cancel=self.cancel_button, enter=self.save)
 
-    # Button Actions
+    # Review button Actions
     def accept_button(self):
         """Handle accept button press"""
         self.keyboard_page()
