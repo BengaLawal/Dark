@@ -10,7 +10,6 @@ from keyboard import Keyboard
 from mail import EmailSender
 from file_manager import FileManager, MediaType
 from camera_utils.camera_canon import CanonCamera
-from camera_utils.camera_opencv import OpenCVCamera
 from camera_utils.camera_manager import CameraManager
 
 

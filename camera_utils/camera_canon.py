@@ -1,11 +1,13 @@
-import gphoto2 as gp
-import numpy as np
-from PIL import Image
+import os
 import io
-from typing import Tuple, List, Optional
-from camera_utils.camera_interface import Camera
-import time
 import cv2
+import time
+import subprocess
+import numpy as np
+import gphoto2 as gp
+from PIL import Image
+from typing import Tuple, Optional
+from camera_utils.camera_interface import Camera
 
 
 class CanonCamera(Camera):
@@ -22,19 +24,34 @@ class CanonCamera(Camera):
     def initialize(self) -> bool:
         """Initialize the Canon camera using gphoto2"""
         try:
-            self.context = gp.Context()
-            self.camera = gp.Camera()
-            self.camera.init(self.context)
+            self._kill_gphoto2_process()
 
-            # Configure camera settings
-            config = self.camera.get_config(self.context)
-            capture_target = config.get_child_by_name('capturetarget')
-            capture_target.set_value('Memory card')
-            self.camera.set_config(config, self.context)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    self.context = gp.Context()
+                    self.camera = gp.Camera()
+                    self.camera.init(self.context)
 
-            self._initialized = True
-            self.logger.info("Canon camera initialized successfully")
-            return True
+                    # Configure camera settings
+                    config = self.camera.get_config(self.context)
+                    capture_target = config.get_child_by_name('capturetarget')
+                    capture_target.set_value('Memory card')
+                    self.camera.set_config(config, self.context)
+
+                    self._initialized = True
+                    self.logger.info("Canon camera initialized successfully")
+                    return True
+
+                except Exception as gp_err:
+                    self.logger.warning(f"GPhoto error on attempt {attempt + 1}: {gp_err}")
+                    if attempt < max_retries - 1:
+                        self._reset_usb()
+                        time.sleep(2)
+                    else:
+                        raise
+
+            return False
 
         except Exception as e:
             self.logger.error(f"Failed to initialize Canon camera: {e}")
@@ -138,3 +155,54 @@ class CanonCamera(Camera):
     def is_initialized(self) -> bool:
         """Check if Canon camera is properly initialized"""
         return self._initialized
+
+    def _kill_gphoto2_process(self) -> None:
+        """Kill any existing gphoto2 processes that might be blocking camera access"""
+        try:
+            # List of processes to kill
+            processes = [
+                "gvfs-gphoto2-volume-monitor",
+                "gvfsd-gphoto2",
+                "gvfs-afc-volume-monitor"
+            ]
+
+            for process in processes:
+                try:
+                    # Try using pkill
+                    subprocess.run(['pkill', '-f', process],
+                                   stderr=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL)
+                except subprocess.SubprocessError:
+                    try:
+                        # Alternative using killall
+                        subprocess.run(['killall', process],
+                                       stderr=subprocess.DEVNULL,
+                                       stdout=subprocess.DEVNULL)
+                    except subprocess.SubprocessError:
+                        pass
+
+            # Short delay to ensure processes are terminated
+            time.sleep(1)
+
+        except Exception as e:
+            self.logger.warning(f"Error while killing gphoto2 processes: {e}")
+
+    def _reset_usb(self) -> None:
+        """Reset USB device if camera is not responding"""
+        try:
+            # Find Canon camera USB device
+            lsusb_output = subprocess.check_output(['lsusb']).decode()
+            for line in lsusb_output.split('\n'):
+                if 'Canon' in line:
+                    # Extract bus and device numbers
+                    bus = line.split()[1]
+                    device = line.split()[3].rstrip(':')
+
+                    # Reset USB device
+                    subprocess.run(['sudo', 'usbreset', f'/dev/bus/usb/{bus}/{device}'],
+                                   stderr=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL)
+                    time.sleep(2)
+                    break
+        except Exception as e:
+            self.logger.warning(f"Error while resetting USB: {e}")

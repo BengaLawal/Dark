@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import time
-import logging
 from PIL import Image
 from camera_utils.camera_interface import Camera
 from typing import Tuple, List, Optional
