@@ -1,15 +1,18 @@
+import cv2
 import tkinter as tk
-import customtkinter as ctk
 import numpy as np
-from PIL import Image
 import time
 import threading
-import cv2
+import customtkinter as ctk
+from PIL import Image
 from CTkMessagebox import CTkMessagebox
 from keyboard import Keyboard
 from mail import EmailSender
 from file_manager import FileManager, MediaType
-from camera_manager import CameraManager, OpenCVCamera
+from camera_utils.camera_canon import CanonCamera
+from camera_utils.camera_opencv import OpenCVCamera
+from camera_utils.camera_manager import CameraManager
+
 
 class UserInterface(ctk.CTkFrame):
     def __init__(self, master, login_cred, logger = None):
@@ -126,7 +129,8 @@ class UserInterface(ctk.CTkFrame):
     def _initialize_camera(self):
         """Initialize camera with retry mechanism"""
         try:
-            camera = OpenCVCamera()
+            camera = CanonCamera(logger=self.logger)
+            # camera = OpenCVCamera(logger=self.logger)
             self.camera_manager = CameraManager(camera)
             if not self.camera_manager.initialize_camera():
                 raise RuntimeError("Failed to initialize camera after multiple attempts")
