@@ -5,9 +5,10 @@ import time
 import threading
 import customtkinter as ctk
 from PIL import Image
-from CTkMessagebox import CTkMessagebox
-from keyboard import Keyboard
 from mail import EmailSender
+from keyboard import Keyboard
+from watermark import Watermark
+from CTkMessagebox import CTkMessagebox
 from file_manager import FileManager, MediaType
 from camera_utils.camera_canon import CanonCamera
 from camera_utils.camera_manager import CameraManager
@@ -18,6 +19,7 @@ class UserInterface(ctk.CTkFrame):
         super().__init__(master)
         self.master = master
         self.mail = EmailSender(logger)
+        self.watermark = Watermark(logger)
         self.cred = login_cred
 
         self.logger = logger.getChild(self.__class__.__name__)
@@ -253,6 +255,7 @@ class UserInterface(ctk.CTkFrame):
             resized_frame = cv2.resize(frame_array, (1280, 853))
             self.media_path = FileManager.get_save_path(MediaType.PICTURE, count)
             cv2.imwrite(filename=self.media_path, img=resized_frame)
+            self.watermark.apply_picture_watermark(accepted_picture_path=self.media_path)
 
     def _save_boomerang(self, count):
         """Save boomerang frames"""

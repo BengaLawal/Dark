@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
@@ -6,49 +7,120 @@ from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
 
 class Watermark:
-    def __init__(self):
+    def __init__(self, logger=None):
         self.watermark_image_path = "watermark/watermark.png"
         self.watermark_text = "#RushClaremont"
+        self.logger = logger.getChild(self.__class__.__name__)
         # self.accepted_image = accepted_image_path
 
-    def apply_picture_watermark(self, accepted_picture_path):
+    def apply_picture_watermark(self, accepted_picture_path: str) -> bool:
         """
-        Apply watermark to picture.
-        :param accepted_picture_path: picture path
+        Apply watermark image and text to a picture.
+
+        Args:
+            accepted_picture_path (str): Path to the image file to watermark
+
+        Returns:
+            bool: True if watermark was applied successfully, False otherwise
         """
-        # Open the accepted image
-        accepted_image = Image.open(accepted_picture_path)
+        try:
+            # Validate input paths
+            if not os.path.exists(accepted_picture_path):
+                raise ValueError(f"Input image not found: {accepted_picture_path}")
+            if not os.path.exists(self.watermark_image_path):
+                raise ValueError(f"Watermark image not found: {self.watermark_image_path}")
 
-        # Resize the watermark image to a desired size
-        watermark_image = Image.open(self.watermark_image_path)
-        watermark_width = int(accepted_image.width / 4)  # Adjust the width of the watermark image as desired
-        watermark_height = int(watermark_image.height * (watermark_width / watermark_image.width))
-        watermark_image = watermark_image.resize((watermark_width, watermark_height))
+            # Open images with context managers for proper resource handling
+            with Image.open(accepted_picture_path) as accepted_image:
+                # Create a copy to work with
+                watermarked_image = accepted_image.convert('RGBA')
 
-        # Add the watermark image to the bottom right corner of the image
-        watermark_position = (
-        accepted_image.width - watermark_image.width, accepted_image.height - watermark_image.height)
-        accepted_image.paste(watermark_image, watermark_position, mask=watermark_image)
+                # Process watermark image
+                with Image.open(self.watermark_image_path) as watermark_image:
+                    watermark_image = watermark_image.convert('RGBA')
 
-        # Calculate the position for the watermark text
-        watermark_font = ImageFont.load_default()  # Adjust the font and size as desired
-        text_width, text_height = watermark_font.getsize(self.watermark_text)
-        text_position_x = accepted_image.width - watermark_image.width - text_width - 10
-        text_position_y = accepted_image.height - text_height - 10
+                    # Calculate watermark size (25% of original image width)
+                    watermark_width = int(accepted_image.width * 0.25)
+                    watermark_height = int(watermark_image.height *
+                                           (watermark_width / watermark_image.width))
 
-        # Add the watermark text to the bottom left corner of the image
-        draw = ImageDraw.Draw(accepted_image)  # Create a draw object
+                    # Resize watermark maintaining aspect ratio
+                    watermark_resized = watermark_image.resize(
+                        (watermark_width, watermark_height),
+                        Image.Resampling.LANCZOS
+                    )
 
-        # Load the default font provided by PIL
-        watermark_font = ImageFont.load_default()  # Adjust the font and size as desired
+                    # Calculate position for bottom right corner
+                    watermark_position = (
+                        watermarked_image.width - watermark_resized.width - 10,
+                        watermarked_image.height - watermark_resized.height - 10
+                    )
 
-        # Add the watermark text to the image
-        draw.text((text_position_x, text_position_y), self.watermark_text, fill=(255, 255, 255), font=watermark_font)
+                    # Paste watermark image
+                    watermarked_image.paste(
+                        watermark_resized,
+                        watermark_position,
+                        watermark_resized
+                    )
 
-        # Save the watermarked image
-        accepted_image.save(accepted_picture_path)
+                # Add text watermark
+                draw = ImageDraw.Draw(watermarked_image)
 
-        print("Watermark applied to picture successfully!")
+                try:
+                    font_size = int(watermarked_image.width * 0.50)
+                    watermark_font = ImageFont.truetype("arial.ttf", font_size)
+                except OSError:
+                    watermark_font = ImageFont.load_default()
+
+                # Get text size for positioning
+                bbox = draw.textbbox((0, 0), self.watermark_text, font=watermark_font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+
+                # Calculate text position
+                text_position = (
+                    text_width + 10,
+                    watermarked_image.height - text_height - 30
+                )
+
+                # Add text with outline
+                outline_color = (0, 0, 0)
+                text_color = (255, 255, 255)
+                outline_width = 2
+
+                for offset_x in range(-outline_width, outline_width + 1):
+                    for offset_y in range(-outline_width, outline_width + 1):
+                        draw.text(
+                            (text_position[0] + offset_x, text_position[1] + offset_y),
+                            self.watermark_text,
+                            font=watermark_font,
+                            fill=outline_color
+                        )
+
+                draw.text(
+                    text_position,
+                    self.watermark_text,
+                    font=watermark_font,
+                    fill=text_color
+                )
+
+                # Convert back to RGB before saving as JPEG
+                if watermarked_image.mode == 'RGBA':
+                    watermarked_image = watermarked_image.convert('RGB')
+
+                # Save with optimal quality
+                watermarked_image.save(
+                    accepted_picture_path,
+                    'JPEG',
+                    quality=95,
+                    optimize=True
+                )
+                self.logger.info("Watermark applied to picture successfully!")
+                return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to apply watermark: {str(e)}")
+            return False
 
     def apply_video_watermark(self, accepted_video_path):
         """
@@ -112,4 +184,4 @@ class Watermark:
         # original_duration = video_clip.duration
         # ffmpeg_extract_subclip(watermarked_video_path, 0, original_duration, targetname=watermarked_video_path)
 
-        print("Watermark applied to video successfully!")
+        self.logger.info("Watermark applied to video successfully!")
