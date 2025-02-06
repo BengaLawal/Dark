@@ -16,6 +16,20 @@ from camera_utils.camera_manager import CameraManager
 
 
 class UserInterface(ctk.CTkFrame):
+    """Main application interface for the photo booth system.
+    
+    Handles UI layout, camera management, media processing, and user interactions.
+    
+    Args:
+        master (tk.Tk): Root window instance
+        login_cred: User credentials for email services
+        logger (logging.Logger): Logger instance for diagnostics
+    
+    Attributes:
+        camera_manager (CameraManager): Controls camera operations
+        media_path (str): Path to last saved media file
+        user_email (str): Email address entered by user
+    """
     def __init__(self, master, login_cred, logger = None):
         super().__init__(master)
         self.master = master
@@ -67,7 +81,11 @@ class UserInterface(ctk.CTkFrame):
         self.home_page()
 
     def home_page(self):
-        """Set up the Main page"""
+        """Initialize and display the main landing page.
+        
+        Creates the primary interface with media selection buttons and title.
+        Handles grid layout configuration for responsive design.
+        """
         self.logger.info("Initializing home page")
         try:
             self.master.title("Darkroom Booth")
@@ -91,7 +109,17 @@ class UserInterface(ctk.CTkFrame):
             self.logger.error(f"Error in home page initialization: {e}")
 
     def preview_page(self):
-        """Handles what happens after the button on the homepage is pressed"""
+        """Transition to camera preview interface.
+        
+        Handles:
+        - Destruction of home page elements
+        - Camera initialization with retry logic
+        - Countdown timer startup
+        - Preview frame setup
+        
+        Raises:
+            RuntimeError: If camera fails to initialize
+        """
         try:
             self._destroy_frame(self.main_frame)
             self._setup_preview_frame()
@@ -102,7 +130,16 @@ class UserInterface(ctk.CTkFrame):
             self._handle_camera_error(str(e))
 
     def review_page(self, media_content):
-        """Review the captured media content"""
+        """Display captured media for user review.
+        
+        Args:
+            media_content (Union[np.ndarray, List[np.ndarray]]): Captured media data
+        
+        Shows:
+        - Image preview or video playback
+        - Action buttons (Accept/Retake/Cancel)
+        - Auto-plays video/boomerang content
+        """
         self.logger.info("Initializing review page")
         try:
             self._destroy_frame(self.preview_frame)
@@ -129,7 +166,14 @@ class UserInterface(ctk.CTkFrame):
         self.preview_size = self.screen_height * 80 / 100
 
     def _initialize_camera(self):
-        """Initialize camera with retry mechanism"""
+        """Initialize camera hardware with error handling.
+        
+        Attempts to create CanonCamera instance first, falls back to OpenCV if needed.
+        Implements USB reset and process cleanup for reliability.
+        
+        Raises:
+            RuntimeError: If camera initialization fails after retries
+        """
         try:
             camera = CanonCamera(logger=self.logger)
             # camera = OpenCVCamera(logger=self.logger)
@@ -158,7 +202,17 @@ class UserInterface(ctk.CTkFrame):
         display_methods[self.pressed_button]()
 
     def update_preview(self):
-        """Update the preview label with the latest frame"""
+        """Update live camera preview display.
+        
+        Continuously captures and processes frames from camera.
+        Handles media type-specific capture logic.
+        
+        Returns:
+            None: Updates UI elements directly
+            
+        Raises:
+            CameraError: If frame capture fails consistently
+        """
         try:
             pil_image = self.camera_manager.capture_and_process_frame(
                 preview_size=(int(self.preview_size), int(self.preview_size))
@@ -241,7 +295,17 @@ class UserInterface(ctk.CTkFrame):
         self.send_email()
 
     def _save_picture(self, count):
-        """Save picture with resizing"""
+        """Save captured picture to disk with processing.
+        
+        Performs:
+        - Image format conversion (PIL -> OpenCV)
+        - Resolution scaling (1280x853)
+        - Watermark application
+        - File system metadata updates
+        
+        Args:
+            count (int): Media counter for unique filenames
+        """
         if self.last_picture_frame is not None:
             # Convert PIL Image to numpy array if it's a PIL Image
             if isinstance(self.last_picture_frame, Image.Image):
@@ -322,7 +386,16 @@ class UserInterface(ctk.CTkFrame):
         self.watermark.apply_video_watermark(self.media_path)
 
     def send_email(self):
-        """Send email with media attachment"""
+        """Send captured media to user's email address.
+        
+        Requires:
+        - Valid user credentials
+        - Saved media file path
+        - Active internet connection
+        
+        Note:
+            Runs in background thread to avoid UI blocking
+        """
         if self.media_path and self.user_email:
             self.mail.send_email(self.cred, self.user_email, self.media_path)
         self.user_email = None
@@ -336,7 +409,7 @@ class UserInterface(ctk.CTkFrame):
     def _setup_keyboard(self):
         """Set up keyboard UI components"""
         keyboard_width = self.screen_width
-        keyboard_height = self.screen_height * 70 / 100
+        keyboard_height = int(self.screen_height * 70 / 100)
 
         self.keyboard_page_frame = ctk.CTkFrame(self.master)
         self.keyboard_page_frame.pack(side="bottom", fill=ctk.BOTH, expand=True)
@@ -353,7 +426,7 @@ class UserInterface(ctk.CTkFrame):
         self.entry_frame.grid(row=0, column=0, columnspan=11, sticky="nsew")
         self.email_entry_text = tk.StringVar()
         self.email_entry = ctk.CTkEntry(self.entry_frame, textvariable=self.email_entry_text,
-                                        width=self.screen_width, height=self.screen_height * 10 / 100)
+                                        width=self.screen_width, height=int(self.screen_height * 10 / 100))
         self.email_entry.focus()
         self.email_entry.pack(side="bottom")
         self.entry_frame.grid_columnconfigure(0, weight=1)
@@ -457,7 +530,7 @@ class UserInterface(ctk.CTkFrame):
             else:
                 cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 img = Image.fromarray(cv2image)
-            ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, self.screen_height * 0.9))
+            ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, int(self.screen_height * 0.9)))
             self.review_label.ctk_image = ctk_image
             self.review_label.configure(image=ctk_image)
             self.review_label.after(15, self.play_video_frame, frames, index + 1)
@@ -506,7 +579,7 @@ class UserInterface(ctk.CTkFrame):
             cv2image = cv2.cvtColor(frame_array, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
             img = Image.fromarray(cv2image)
             ctk_image = ctk.CTkImage(dark_image=img,
-                                     size=(self.screen_width, self.screen_height * 0.9))
+                                     size=(self.screen_width, int(self.screen_height * 0.9)))
             self.review_label.ctk_image = ctk_image
             self.review_label.configure(image=ctk_image)
         except Exception as e:
