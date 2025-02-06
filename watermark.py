@@ -69,9 +69,10 @@ class Watermark:
                 draw = ImageDraw.Draw(watermarked_image)
 
                 try:
-                    font_size = int(watermarked_image.width * 0.50)
-                    watermark_font = ImageFont.truetype("arial.ttf", font_size)
+                    font_size = watermark_height // 7
+                    watermark_font = ImageFont.truetype("./watermark/arial.ttf", font_size)
                 except OSError:
+                    self.logger.error("Failed to load font, using default")
                     watermark_font = ImageFont.load_default()
 
                 # Get text size for positioning
@@ -79,10 +80,10 @@ class Watermark:
                 text_width = bbox[2] - bbox[0]
                 text_height = bbox[3] - bbox[1]
 
-                # Calculate text position
+                # Calculate text position for far left corner
                 text_position = (
-                    text_width + 10,
-                    watermarked_image.height - text_height - 30
+                    10,  # 10px padding from left
+                    watermark_position[1] + (watermark_height - text_height) // 2
                 )
 
                 # Add text with outline
@@ -142,9 +143,9 @@ class Watermark:
                 raise RuntimeError("Could not load watermark image")
 
             # Calculate watermark size (25% of video width)
-            w_width = int(width * 0.25)
-            w_height = int(watermark_img.shape[0] * (w_width / watermark_img.shape[1]))
-            watermark_img = cv2.resize(watermark_img, (w_width, w_height))
+            watermark_width = int(width * 0.25)
+            watermark_height = int(watermark_img.shape[0] * (watermark_width / watermark_img.shape[1]))
+            watermark_img = cv2.resize(watermark_img, (watermark_width, watermark_height))
 
             # Create output video
             temp_path = accepted_video_path.replace('.mp4', '_temp.mp4')
@@ -152,31 +153,29 @@ class Watermark:
             out_video = cv2.VideoWriter(temp_path, fourcc, fps, (width, height))
 
             # Font settings for text watermark
-            font = cv2.FONT_HERSHEY_DUPLEX
-            font_scale = width * 0.001  # Scale font size with video width
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = watermark_height / 300
             font_thickness = 2
-            text = "#RushClaremont"
+
+            text_y = height - watermark_height // 2 - 10
 
             while True:
                 ret, frame = input_video.read()
                 if not ret:
                     break
 
-                # Add image watermark
-                roi = frame[height - w_height - 10:height - 10, width - w_width - 10:width - 10]
-                if watermark_img.shape[2] == 4:  # If watermark has alpha channel
+                # Image watermark at bottom right
+                roi = frame[height - watermark_height - 10:height - 10, width - watermark_width - 10:width - 10]
+                if watermark_img.shape[2] == 4:
                     alpha = watermark_img[:, :, 3] / 255.0
                     for c in range(3):
                         roi[:, :, c] = roi[:, :, c] * (1 - alpha) + watermark_img[:, :, c] * alpha
 
-                # Add text watermark
-                text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
-                text_x = width - w_width - text_size[0] - 30  # Position before watermark image
-                text_y = height - 20
-
-                # Add text outline
-                cv2.putText(frame, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness + 2)
-                cv2.putText(frame, text, (text_x, text_y), font, font_scale, (255, 255, 255), font_thickness)
+                # Text at far left aligned with image
+                cv2.putText(frame, self.watermark_text, (10, text_y), font, font_scale, (0, 0, 0),
+                            font_thickness + 2)
+                cv2.putText(frame, self.watermark_text, (10, text_y), font, font_scale, (255, 255, 255),
+                            font_thickness)
 
                 out_video.write(frame)
 
