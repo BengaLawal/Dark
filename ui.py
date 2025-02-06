@@ -275,6 +275,7 @@ class UserInterface(ctk.CTkFrame):
                     frame_array = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 video_writer.write(frame_array)
             video_writer.release()
+            self.watermark.apply_video_watermark(accepted_video_path=self.media_path)
 
     def send_email(self):
         """Send email with media attachment"""
