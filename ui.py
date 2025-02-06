@@ -1,3 +1,4 @@
+import os
 import cv2
 import tkinter as tk
 import numpy as np
@@ -262,20 +263,63 @@ class UserInterface(ctk.CTkFrame):
         pass  # Implement boomerang saving logic
 
     def _save_video(self, count):
-        """Save video frames"""
-        if self.video_frames:
-            self.media_path = FileManager.get_save_path(MediaType.VIDEO, count)
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            video_writer = cv2.VideoWriter(self.media_path, fourcc, 20.0, (640, 480))
+        """Save video frames as MP4 using mp4v codec"""
+        if not self.video_frames:
+            return
 
+        self.media_path = FileManager.get_save_path(MediaType.VIDEO, count)
+
+        try:
+            # Get frame dimensions from first frame
+            first_frame = self.video_frames[0]
+            if isinstance(first_frame, Image.Image):
+                frame = cv2.cvtColor(np.array(first_frame), cv2.COLOR_RGB2BGR)
+            else:
+                frame = first_frame
+
+            # Ensure dimensions are even
+            height, width = frame.shape[:2]
+            width = width if width % 2 == 0 else width - 1
+            height = height if height % 2 == 0 else height - 1
+
+            # Use mp4v codec
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            video_writer = cv2.VideoWriter(
+                filename=self.media_path,
+                fourcc=fourcc,
+                fps=30.0,
+                frameSize=(width, height),
+                isColor=True
+            )
+
+            if not video_writer.isOpened():
+                raise RuntimeError("Failed to initialize video writer")
+
+            # Write frames
             for frame in self.video_frames:
                 if isinstance(frame, Image.Image):
                     frame_array = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
                 else:
-                    frame_array = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_array = frame
+
+                # Ensure frame matches video dimensions
+                if frame_array.shape[:2] != (height, width):
+                    frame_array = cv2.resize(frame_array, (width, height))
+
                 video_writer.write(frame_array)
+
             video_writer.release()
-            self.watermark.apply_video_watermark(accepted_video_path=self.media_path)
+
+            # Verify the file was created
+            if not os.path.exists(self.media_path) or os.path.getsize(self.media_path) == 0:
+                raise RuntimeError("Video file was not created successfully")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save video: {e}")
+            if os.path.exists(self.media_path):
+                os.remove(self.media_path)
+            raise
+        self.watermark.apply_video_watermark(self.media_path)
 
     def send_email(self):
         """Send email with media attachment"""

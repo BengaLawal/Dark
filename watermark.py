@@ -1,4 +1,6 @@
 import os
+
+import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
@@ -122,66 +124,74 @@ class Watermark:
             self.logger.error(f"Failed to apply watermark: {str(e)}")
             return False
 
-    def apply_video_watermark(self, accepted_video_path):
-        """
-        Apply watermark to video.
-        :param accepted_video_path: video path
-        """
-        # Open the accepted video clip
-        video_clip = VideoFileClip(accepted_video_path)
+    def apply_video_watermark(self, accepted_video_path: str) -> bool:
+        """Apply watermark to video using OpenCV"""
+        try:
+            input_video = cv2.VideoCapture(accepted_video_path)
+            if not input_video.isOpened():
+                raise RuntimeError("Could not open video file")
 
-        # # Load the watermark image
-        # watermark_image = Image.open(self.watermark_image_path)
-        # watermark_width = int(video_clip.w / 4)  # Adjust the width of the watermark image as desired
-        # watermark_height = int(watermark_image.height * (watermark_width / watermark_image.width))
-        # watermark_image = watermark_image.resize((watermark_width, watermark_height))
+            # Get video properties
+            width = int(input_video.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(input_video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = input_video.get(cv2.CAP_PROP_FPS)
 
-        # Load the watermark image and convert it to a numpy array
-        watermark_image = np.array(Image.open(self.watermark_image_path))
-        watermark_width = int(video_clip.w / 4)  # Adjust the width of the watermark image as desired
-        watermark_height = int(watermark_image.shape[0] * (watermark_width / watermark_image.shape[1]))
-        watermark_image = np.array(Image.fromarray(watermark_image).resize((watermark_width, watermark_height)))
+            # Load and resize watermark image
+            watermark_img = cv2.imread(self.watermark_image_path, cv2.IMREAD_UNCHANGED)
+            if watermark_img is None:
+                raise RuntimeError("Could not load watermark image")
 
-        # Create a TextClip for the watermark text
-        watermark_text_clip = TextClip(
-            self.watermark_text,
-            fontsize=30,  # Adjust the font size as desired
-            color='white',
-            font='Arial',  # Adjust the font family as desired
-            method='label'
-        )
+            # Calculate watermark size (25% of video width)
+            w_width = int(width * 0.25)
+            w_height = int(watermark_img.shape[0] * (w_width / watermark_img.shape[1]))
+            watermark_img = cv2.resize(watermark_img, (w_width, w_height))
 
-        # Calculate the position for the watermark text
-        text_position_x = video_clip.w - watermark_width - watermark_text_clip.w - 10
-        text_position_y = video_clip.h - watermark_text_clip.h - 10
+            # Create output video
+            temp_path = accepted_video_path.replace('.mp4', '_temp.mp4')
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out_video = cv2.VideoWriter(temp_path, fourcc, fps, (width, height))
 
-        # Set the watermark text position
-        watermark_text_clip = watermark_text_clip.set_position((text_position_x, text_position_y))
+            # Font settings for text watermark
+            font = cv2.FONT_HERSHEY_DUPLEX
+            font_scale = width * 0.001  # Scale font size with video width
+            font_thickness = 2
+            text = "#RushClaremont"
 
-        # Set the watermark image position
-        watermark_image_clip = ImageClip(watermark_image)
-        watermark_image_clip = watermark_image_clip.set_position(('right', 'bottom'))
+            while True:
+                ret, frame = input_video.read()
+                if not ret:
+                    break
 
-        # Composite the watermark text and image on top of the video
-        video_with_watermark = CompositeVideoClip([video_clip, watermark_text_clip, watermark_image_clip])
+                # Add image watermark
+                roi = frame[height - w_height - 10:height - 10, width - w_width - 10:width - 10]
+                if watermark_img.shape[2] == 4:  # If watermark has alpha channel
+                    alpha = watermark_img[:, :, 3] / 255.0
+                    for c in range(3):
+                        roi[:, :, c] = roi[:, :, c] * (1 - alpha) + watermark_img[:, :, c] * alpha
 
-        # Set the duration of the video clip to be the same as the original video
-        video_with_watermark = video_with_watermark.set_duration(video_clip.duration)
+                # Add text watermark
+                text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
+                text_x = width - w_width - text_size[0] - 30  # Position before watermark image
+                text_y = height - 20
 
-        # Set the audio of the watermarked video to be the same as the original video
-        video_with_watermark = video_with_watermark.set_audio(video_clip.audio)
+                # Add text outline
+                cv2.putText(frame, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness + 2)
+                cv2.putText(frame, text, (text_x, text_y), font, font_scale, (255, 255, 255), font_thickness)
 
-        # Save the watermarked video
-        watermarked_video_path = accepted_video_path.replace('.mp4',
-                                                             '_watermarked.mp4')  # replace .mp4 with _watermarked
-        video_with_watermark.write_videofile(watermarked_video_path, codec='libx264')
+                out_video.write(frame)
 
-        # Close the video clips
-        video_clip.close()
-        video_with_watermark.close()
+            # Release resources
+            input_video.release()
+            out_video.release()
 
-        # trim the watermarked video to the same duration as the original video
-        # original_duration = video_clip.duration
-        # ffmpeg_extract_subclip(watermarked_video_path, 0, original_duration, targetname=watermarked_video_path)
+            # Replace original with watermarked version
+            os.replace(temp_path, accepted_video_path)
 
-        self.logger.info("Watermark applied to video successfully!")
+            self.logger.info("Video watermark applied successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to apply video watermark: {e}")
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.remove(temp_path)
+            return False
