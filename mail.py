@@ -18,24 +18,24 @@ class EmailSender:
 
     def __init__(self, logger):
         self.sender = os.getenv("SENDER_EMAIL")
-        self.subject = 'Picture Attachment'
         self.body = "Enjoy your photos!\nDon't forget to share using #RUSHCLAREMONT"
         self.logger = logger.getChild(self.__class__.__name__)
 
-    def send_email(self, creds, receiver_email, file_path):
+    def send_email(self, creds, receiver_email, file_path, media_type=None):
         """
         Sends an email with an attachment.
         Args:
             creds: The credentials for authenticating with the Gmail API.
             receiver_email: The recipient's email address.
             file_path: The path to the file to be attached.
+            media_type: Type of media being sent (picture/boomerang/video)
 
         Returns:
             The message object if the email was sent successfully, None otherwise.
         """
         try:
             service = config.service_build(creds)
-            message = self._create_message(receiver_email, file_path)
+            message = self._create_message(receiver_email, file_path, media_type)
             self._send_message(service, message)
             self.logger.info("Email sent successfully to %s", receiver_email)
         except HttpError as error:
@@ -43,12 +43,13 @@ class EmailSender:
             message = None
         return message
 
-    def _create_message(self, receiver_email, path):
+    def _create_message(self, receiver_email, path, media_type=None):
         """
         Creates an email message with an attachment.
         Args:
             receiver_email: The recipient's email address.
             path: The path to the file to be attached.
+            media_type: Type of media being sent (picture/boomerang/video)
 
         Returns:
             The email message in raw format encoded in base64 URL-safe.
@@ -56,7 +57,8 @@ class EmailSender:
         message = MIMEMultipart()
         message["To"] = receiver_email
         message["From"] = self.sender
-        message["Subject"] = self.subject
+        subject = f"{media_type.capitalize() if media_type else 'Picture'} Attachment"
+        message["Subject"] = subject
         message.attach(MIMEText(self.body))
         attachment = self._build_file_part(path)
         message.attach(attachment)

@@ -58,20 +58,33 @@ def test_build_file_part(email_sender, file_content, content_type, expected_mime
 
 
 def test_create_message(email_sender):
-    """Test _create_message method"""
+    """Test _create_message method with different media types"""
     receiver_email = "receiver@example.com"
     file_path = "test.jpg"
+    
+    test_cases = [
+        (None, "Picture Attachment"),
+        ("picture", "Picture Attachment"),
+        ("video", "Video Attachment"),
+        ("boomerang", "Boomerang Attachment")
+    ]
 
-    with patch.object(email_sender, '_build_file_part') as mock_build_part:
-        mock_attachment = MIMEBase('application', 'octet-stream')
-        mock_build_part.return_value = mock_attachment
+    for media_type, expected_subject in test_cases:
+        with patch.object(email_sender, '_build_file_part') as mock_build_part:
+            mock_attachment = MIMEBase('application', 'octet-stream')
+            mock_build_part.return_value = mock_attachment
 
-        result = email_sender._create_message(receiver_email, file_path)
+            result = email_sender._create_message(receiver_email, file_path, media_type)
 
-        assert isinstance(result, dict)
-        assert 'raw' in result
-        assert isinstance(result['raw'], str)
-        mock_build_part.assert_called_once_with(file_path)
+            assert isinstance(result, dict)
+            assert 'raw' in result
+            assert isinstance(result['raw'], str)
+            
+            # Decode the raw message to verify subject
+            decoded = base64.urlsafe_b64decode(result['raw'].encode()).decode()
+            assert f'Subject: {expected_subject}' in decoded
+            
+            mock_build_part.assert_called_once_with(file_path)
 
 
 def test_send_message(email_sender, mock_service):
@@ -87,9 +100,10 @@ def test_send_message(email_sender, mock_service):
 
 
 def test_send_email_success(email_sender, mock_credentials, mock_service):
-    """Test successful email sending"""
+    """Test successful email sending with different media types"""
     receiver_email = "receiver@example.com"
     file_path = "test.jpg"
+    media_type = "video"
 
     with patch('config.configuration.service_build', return_value=mock_service), \
             patch.object(email_sender, '_create_message') as mock_create_message, \
@@ -97,10 +111,10 @@ def test_send_email_success(email_sender, mock_credentials, mock_service):
         mock_message = {'raw': 'test_content'}
         mock_create_message.return_value = mock_message
 
-        result = email_sender.send_email(mock_credentials, receiver_email, file_path)
+        result = email_sender.send_email(mock_credentials, receiver_email, file_path, media_type)
 
         assert result == mock_message
-        mock_create_message.assert_called_once_with(receiver_email, file_path)
+        mock_create_message.assert_called_once_with(receiver_email, file_path, media_type)
         mock_send_message.assert_called_once_with(mock_service, mock_message)
         email_sender.logger.info.assert_called_once()
 
