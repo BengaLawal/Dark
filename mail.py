@@ -18,7 +18,6 @@ class EmailSender:
 
     def __init__(self, logger):
         self.sender = os.getenv("SENDER_EMAIL")
-        self.body = "Enjoy your photos!\nDon't forget to share using #RUSHCLAREMONT"
         self.logger = logger.getChild(self.__class__.__name__)
 
     def send_email(self, creds, receiver_email, file_path, media_type=None):
@@ -57,9 +56,9 @@ class EmailSender:
         message = MIMEMultipart()
         message["To"] = receiver_email
         message["From"] = self.sender
-        subject = f"{media_type.capitalize() if media_type else 'Picture'} Attachment"
-        message["Subject"] = subject
-        message.attach(MIMEText(self.body))
+        message["Subject"] = f"{media_type.capitalize()} Attachment"
+        body = f"Enjoy your {media_type}!\nDon't forget to share using #RUSHCLAREMONT"
+        message.attach(MIMEText(body))
         attachment = self._build_file_part(path)
         message.attach(attachment)
         return {"raw": base64.urlsafe_b64encode(message.as_bytes()).decode()}

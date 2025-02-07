@@ -1,14 +1,24 @@
 import os
-
 import cv2
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
-from moviepy.video.VideoClip import ImageClip
-from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
-
 
 class Watermark:
+    """
+        A class for applying watermarks to images and videos.
+
+        This class provides functionality to add both image and text watermarks
+        to pictures and videos. The watermark consists of an image placed in the
+        bottom right corner and text placed in the bottom left corner.
+
+        Attributes:
+            watermark_image_path (str): Path to the watermark image file
+            watermark_text (str): Text to be used as watermark
+            logger: Logger instance for tracking operations
+
+        Methods:
+            apply_picture_watermark(accepted_picture_path): Applies watermark to an image
+            apply_video_watermark(accepted_video_path): Applies watermark to a video
+        """
     def __init__(self, logger=None):
         self.watermark_image_path = "watermark/watermark.png"
         self.watermark_text = "#RushClaremont"
@@ -24,6 +34,16 @@ class Watermark:
 
         Returns:
             bool: True if watermark was applied successfully, False otherwise
+
+        Raises:
+            ValueError: If input image or watermark image files are not found
+            Exception: If any error occurs during watermark application
+
+        Description:
+            This method applies both an image watermark and text watermark to the input image.
+            The image watermark is placed in the bottom right corner at 25% of the original image width.
+            The text watermark is placed in the bottom left corner aligned with the image watermark.
+            The watermarked image replaces the original file.
         """
         try:
             # Validate input paths
@@ -126,8 +146,20 @@ class Watermark:
             return False
 
     def apply_video_watermark(self, accepted_video_path: str) -> bool:
-        """Apply watermark to video using OpenCV"""
-        try:
+        """
+        Apply watermark to video using OpenCV.
+
+        Args:
+            accepted_video_path (str): Path to the video file to watermark
+
+        Returns:
+            bool: True if watermark was applied successfully, False otherwise
+
+        This method applies both an image watermark in the bottom right corner
+        and text watermark in the bottom left corner to each frame of the video.
+        The watermarked video replaces the original file.
+        """
+        try:  # Open video file
             input_video = cv2.VideoCapture(accepted_video_path)
             if not input_video.isOpened():
                 raise RuntimeError("Could not open video file")
