@@ -399,7 +399,7 @@ class UserInterface(ctk.CTkFrame):
             Runs in background thread to avoid UI blocking
         """
         if self.media_path and self.user_email:
-            media_type = self.pressed_button.name.lower()
+            media_type = self.pressed_button.lower()
             self.mail.send_email(self.cred, self.user_email, self.media_path, media_type)
         self.user_email = None
 
