@@ -87,6 +87,7 @@ class CanonCamera(Camera):
             self.camera.set_config(config)
             self._recording = True
             self.video_start_time = time.time()
+            self.logger.info("Started video recording on Canon camera")
             return True
         except Exception as e:
             self.logger.error(f"Failed to start video recording: {e}")
@@ -104,7 +105,7 @@ class CanonCamera(Camera):
             self.camera.set_config(config)
 
             # Wait briefly for the camera to finish writing
-            time.sleep(1)
+            time.sleep(2)
 
             # Get the latest video file
             folder_list = self.camera.folder_list_files('/')

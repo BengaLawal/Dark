@@ -494,7 +494,7 @@ class UserInterface(ctk.CTkFrame):
         self.timer_start = time.time()
         timer_durations = {
             MediaType.PICTURE: 3,
-            MediaType.BOOMERANG: 2,
+            MediaType.BOOMERANG: 4,
             MediaType.VIDEO: 10
         }
         self.timer_end = time.time() + timer_durations[self.pressed_button]
