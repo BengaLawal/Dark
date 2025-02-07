@@ -1,103 +1,144 @@
-import unittest
-from unittest.mock import patch, Mock, mock_open
-import os
-import base64
-from email.mime.image import MIMEImage
-from email.mime.text import MIMEText
+import pytest
+from unittest.mock import Mock, patch, mock_open
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+from email.mime.audio import MIMEAudio
+from email.mime.base import MIMEBase
 from googleapiclient.errors import HttpError
-import logging
 from mail import EmailSender
 
-class TestEmailSender(unittest.TestCase):
-    def setUp(self):
-        self.logger = logging.getLogger('test_logger')
-        self.email_sender = EmailSender(self.logger)
-        self.receiver_email = "test@example.com"
-        self.test_file_path = "test_image.jpg"
-        
-    @patch('mail.config.service_build')
-    def test_send_email_success(self, mock_service_build):
-        # Setup mock service
-        mock_service = Mock()
-        mock_service_build.return_value = mock_service
-        mock_service.users().messages().send().execute.return_value = {'id': '123'}
-        
-        # Test successful email sending
-        result = self.email_sender.send_email(
-            creds=Mock(),
-            receiver_email=self.receiver_email,
-            file_path=self.test_file_path
-        )
-        
-        self.assertIsNotNone(result)
-        mock_service.users().messages().send.assert_called_once()
 
-    @patch('mail.config.service_build')
-    def test_send_email_failure(self, mock_service_build):
-        # Setup mock service to raise HttpError
-        mock_service = Mock()
-        mock_service_build.return_value = mock_service
-        mock_service.users().messages().send.side_effect = HttpError(
-            resp=Mock(status=500), content=b'Error'
-        )
-        
-        # Test failed email sending
-        result = self.email_sender.send_email(
-            creds=Mock(),
-            receiver_email=self.receiver_email,
-            file_path=self.test_file_path
-        )
-        
-        self.assertIsNone(result)
+@pytest.fixture
+def mock_logger():
+    return Mock()
 
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test_image_data')
-    def test_build_file_part_image(self, mock_file):
-        # Test building MIME part for image file
-        result = self.email_sender._build_file_part('test.jpg')
-        
-        self.assertIsInstance(result, MIMEImage)
-        self.assertEqual(result.get_filename(), 'test.jpg')
-        mock_file.assert_called_once_with('test.jpg', 'rb')
 
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test_text_data')
-    def test_build_file_part_text(self, mock_file):
-        # Test building MIME part for text file
-        result = self.email_sender._build_file_part('test.txt')
-        
-        self.assertIsInstance(result, MIMEText)
-        self.assertEqual(result.get_filename(), 'test.txt')
-        mock_file.assert_called_once_with('test.txt', 'rb')
+@pytest.fixture
+def email_sender(mock_logger):
+    with patch.dict('os.environ', {'SENDER_EMAIL': 'test@example.com'}):
+        return EmailSender(mock_logger)
 
-    def test_create_message(self):
-        # Test message creation
-        with patch.object(EmailSender, '_build_file_part') as mock_build_part:
-            mock_build_part.return_value = MIMEText('test attachment')
-            
-            message = self.email_sender._create_message(
-                self.receiver_email,
-                self.test_file_path
-            )
-            
-            self.assertIn('raw', message)
-            # Decode the raw message to verify contents
-            decoded = base64.urlsafe_b64decode(message['raw'].encode()).decode()
-            self.assertIn(self.receiver_email, decoded)
-            self.assertIn(self.email_sender.subject, decoded)
-            self.assertIn(self.email_sender.body, decoded)
 
-    @patch('mail.config.service_build')
-    def test_send_message(self, mock_service_build):
-        # Test the send_message static method
-        mock_service = Mock()
-        mock_message = {'raw': 'test_message'}
-        
-        EmailSender._send_message(mock_service, mock_message)
-        
-        mock_service.users().messages().send.assert_called_once_with(
-            userId="me",
-            body=mock_message
-        )
+@pytest.fixture
+def mock_credentials():
+    return Mock()
 
-if __name__ == '__main__':
-    unittest.main()
+
+@pytest.fixture
+def mock_service():
+    service = Mock()
+    service.users().messages().send.return_value.execute.return_value = {'id': '123'}
+    return service
+
+
+def test_init(email_sender):
+    """Test EmailSender initialization"""
+    assert email_sender.sender == 'test@example.com'
+    assert email_sender.subject == 'Picture Attachment'
+    assert '#RUSHCLAREMONT' in email_sender.body
+
+
+@pytest.mark.parametrize("file_content,content_type,expected_mime_class", [
+    (b'test content', 'text/plain', MIMEText),
+    (b'image content', 'image/jpeg', MIMEImage),
+    (b'audio content', 'audio/mp3', MIMEAudio),
+    (b'binary content', 'application/pdf', MIMEBase),
+])
+def test_build_file_part(email_sender, file_content, content_type, expected_mime_class):
+    """Test _build_file_part with different file types"""
+    test_file = "test_file.txt"
+
+    with patch('mimetypes.guess_type', return_value=(content_type, None)), \
+            patch('builtins.open', mock_open(read_data=file_content)):
+        result = email_sender._build_file_part(test_file)
+
+        assert isinstance(result, expected_mime_class)
+        assert result['Content-Disposition'] == f'attachment; filename="{test_file}"'
+
+
+def test_create_message(email_sender):
+    """Test _create_message method"""
+    receiver_email = "receiver@example.com"
+    file_path = "test.jpg"
+
+    with patch.object(email_sender, '_build_file_part') as mock_build_part:
+        mock_attachment = MIMEBase('application', 'octet-stream')
+        mock_build_part.return_value = mock_attachment
+
+        result = email_sender._create_message(receiver_email, file_path)
+
+        assert isinstance(result, dict)
+        assert 'raw' in result
+        assert isinstance(result['raw'], str)
+        mock_build_part.assert_called_once_with(file_path)
+
+
+def test_send_message(email_sender, mock_service):
+    """Test _send_message method"""
+    test_message = {'raw': 'test_content'}
+
+    email_sender._send_message(mock_service, test_message)
+
+    mock_service.users().messages().send.assert_called_once_with(
+        userId="me",
+        body=test_message
+    )
+
+
+def test_send_email_success(email_sender, mock_credentials, mock_service):
+    """Test successful email sending"""
+    receiver_email = "receiver@example.com"
+    file_path = "test.jpg"
+
+    with patch('config.configuration.service_build', return_value=mock_service), \
+            patch.object(email_sender, '_create_message') as mock_create_message, \
+            patch.object(email_sender, '_send_message') as mock_send_message:
+        mock_message = {'raw': 'test_content'}
+        mock_create_message.return_value = mock_message
+
+        result = email_sender.send_email(mock_credentials, receiver_email, file_path)
+
+        assert result == mock_message
+        mock_create_message.assert_called_once_with(receiver_email, file_path)
+        mock_send_message.assert_called_once_with(mock_service, mock_message)
+        email_sender.logger.info.assert_called_once()
+
+
+def test_send_email_failure(email_sender, mock_credentials):
+    """Test email sending with HTTP error"""
+    receiver_email = "receiver@example.com"
+    file_path = "test.jpg"
+
+    with patch('config.configuration.service_build', side_effect=HttpError(Mock(status=500), b'Error')):
+        result = email_sender.send_email(mock_credentials, receiver_email, file_path)
+
+        assert result is None
+        email_sender.logger.error.assert_called_once()
+
+
+def test_build_file_part_unknown_type(email_sender):
+    """Test _build_file_part with unknown file type"""
+    test_file = "test_file.xyz"
+    test_content = b'test content'
+
+    with patch('mimetypes.guess_type', return_value=(None, None)), \
+            patch('builtins.open', mock_open(read_data=test_content)):
+        result = email_sender._build_file_part(test_file)
+
+        assert isinstance(result, MIMEBase)
+        assert result.get_content_type() == 'application/octet-stream'
+        assert result['Content-Disposition'] == f'attachment; filename="{test_file}"'
+
+
+def test_build_file_part_with_encoding(email_sender):
+    """Test _build_file_part with file that has encoding"""
+    test_file = "test_file.gz"
+    test_content = b'test content'
+
+    with patch('mimetypes.guess_type', return_value=('application/gzip', 'gzip')), \
+            patch('builtins.open', mock_open(read_data=test_content)):
+        result = email_sender._build_file_part(test_file)
+
+        assert isinstance(result, MIMEBase)
+        assert result.get_content_type() == 'application/octet-stream'

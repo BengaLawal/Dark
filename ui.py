@@ -1,8 +1,9 @@
 import os
 import cv2
+import time
+import logging
 import tkinter as tk
 import numpy as np
-import time
 import threading
 import customtkinter as ctk
 from PIL import Image
@@ -10,6 +11,7 @@ from mail import EmailSender
 from keyboard import Keyboard
 from watermark import Watermark
 from CTkMessagebox import CTkMessagebox
+from typing import Union, Any, Optional, List
 from file_manager import FileManager, MediaType
 from camera_utils.camera_canon import CanonCamera
 from camera_utils.camera_manager import CameraManager
