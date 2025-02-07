@@ -30,7 +30,7 @@ class UserInterface(ctk.CTkFrame):
         media_path (str): Path to last saved media file
         user_email (str): Email address entered by user
     """
-    def __init__(self, master, login_cred, logger = None):
+    def __init__(self, master: tk.Tk, login_cred: Any, logger: Optional[logging.Logger] = None) -> None:
         super().__init__(master)
         self.master = master
         self.mail = EmailSender(logger)
@@ -80,7 +80,7 @@ class UserInterface(ctk.CTkFrame):
         # Initialize home page
         self.home_page()
 
-    def home_page(self):
+    def home_page(self) -> None:
         """Initialize and display the main landing page.
         
         Creates the primary interface with media selection buttons and title.
@@ -108,7 +108,7 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             self.logger.error(f"Error in home page initialization: {e}")
 
-    def preview_page(self):
+    def preview_page(self) -> None:
         """Transition to camera preview interface.
         
         Handles:
@@ -129,7 +129,7 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             self._handle_camera_error(str(e))
 
-    def review_page(self, media_content):
+    def review_page(self, media_content: Union[np.ndarray, List[np.ndarray]]) -> None:
         """Display captured media for user review.
         
         Args:
@@ -150,7 +150,7 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             self.logger.error(f"Error in review page initialization: {e}")
 
-    def _setup_preview_frame(self):
+    def _setup_preview_frame(self) -> None:
         """Set up the preview frame and labels"""
         self.preview_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
         self.preview_frame.pack(expand=True, fill=ctk.BOTH)
@@ -165,7 +165,7 @@ class UserInterface(ctk.CTkFrame):
 
         self.preview_size = self.screen_height * 80 / 100
 
-    def _initialize_camera(self):
+    def _initialize_camera(self) -> None:
         """Initialize camera hardware with error handling.
         
         Attempts to create CanonCamera instance first, falls back to OpenCV if needed.
@@ -183,7 +183,7 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             raise RuntimeError(f"Camera initialization failed: {str(e)}")
 
-    def _setup_review_frame(self):
+    def _setup_review_frame(self) -> None:
         """Set up the review frame and label"""
         self.review_frame = ctk.CTkFrame(self.master, width=self.screen_width, height=self.screen_height)
         self.review_frame.pack(expand=True, fill=ctk.BOTH)
@@ -192,7 +192,7 @@ class UserInterface(ctk.CTkFrame):
         self.review_label = ctk.CTkLabel(self.review_frame, text="")
         self.review_label.grid(row=0, column=0, columnspan=3)
 
-    def _display_media_content(self, content):
+    def _display_media_content(self, content: Union[np.ndarray, List[np.ndarray]]) -> None:
         """Display the appropriate media content based on type"""
         display_methods = {
             MediaType.PICTURE: lambda: self._display_frame(content),
@@ -201,7 +201,7 @@ class UserInterface(ctk.CTkFrame):
         }
         display_methods[self.pressed_button]()
 
-    def update_preview(self):
+    def update_preview(self) -> None:
         """Update live camera preview display.
         
         Continuously captures and processes frames from camera.
@@ -231,7 +231,7 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             self.logger.error(f"Error in showing {self.pressed_button} frames: {e}")
 
-    def _handle_media_capture(self, current_time, frame):
+    def _handle_media_capture(self, current_time: float, frame: Union[Image.Image, np.ndarray]) -> None:
         """Handle media capture based on type"""
         capture_handlers = {
             MediaType.PICTURE: self._handle_picture_capture,
@@ -275,7 +275,7 @@ class UserInterface(ctk.CTkFrame):
             self.review_page(self.video_frames)
 
     # Save and send functions
-    def save(self):
+    def save(self) -> None:
         """Save media and send email"""
         self.user_email = self.email_entry.get()
         save_thread = threading.Thread(target=self._save_and_send)
@@ -283,7 +283,7 @@ class UserInterface(ctk.CTkFrame):
         self._destroy_frame(self.keyboard_page_frame)
         self.home_page()
 
-    def _save_and_send(self):
+    def _save_and_send(self) -> None:
         """Save media content and send email in background thread"""
         count = FileManager.increment_count(self.pressed_button)
         save_methods = {
@@ -294,7 +294,7 @@ class UserInterface(ctk.CTkFrame):
         save_methods[self.pressed_button](count)
         self.send_email()
 
-    def _save_picture(self, count):
+    def _save_picture(self, count: int) -> None:
         """Save captured picture to disk with processing.
         
         Performs:
@@ -322,11 +322,11 @@ class UserInterface(ctk.CTkFrame):
             cv2.imwrite(filename=self.media_path, img=resized_frame)
             self.watermark.apply_picture_watermark(accepted_picture_path=self.media_path)
 
-    def _save_boomerang(self, count):
+    def _save_boomerang(self, count: int) -> None:
         """Save boomerang frames"""
         pass  # Implement boomerang saving logic
 
-    def _save_video(self, count):
+    def _save_video(self, count: int) -> None:
         """Save video frames as MP4 using mp4v codec"""
         if not self.video_frames:
             return
@@ -385,7 +385,7 @@ class UserInterface(ctk.CTkFrame):
             raise
         self.watermark.apply_video_watermark(self.media_path)
 
-    def send_email(self):
+    def send_email(self) -> None:
         """Send captured media to user's email address.
         
         Requires:
@@ -401,12 +401,12 @@ class UserInterface(ctk.CTkFrame):
         self.user_email = None
 
     # UI Helper Methods
-    def keyboard_page(self):
+    def keyboard_page(self) -> None:
         """Set up keyboard page"""
         self._destroy_frame(self.review_frame)
         self._setup_keyboard()
 
-    def _setup_keyboard(self):
+    def _setup_keyboard(self) -> None:
         """Set up keyboard UI components"""
         keyboard_width = self.screen_width
         keyboard_height = int(self.screen_height * 70 / 100)
@@ -437,17 +437,17 @@ class UserInterface(ctk.CTkFrame):
                                  entry_box=self.email_entry, cancel=self.cancel_button, enter=self.save)
 
     # Review button Actions
-    def accept_button(self):
+    def accept_button(self) -> None:
         """Handle accept button press"""
         self.keyboard_page()
 
-    def retake_button(self):
+    def retake_button(self) -> None:
         """Handle retake button press"""
         self._destroy_frame(self.review_frame)
         self._clear_media_buffers()
         self.preview_page()
 
-    def cancel_button(self):
+    def cancel_button(self) -> None:
         """Handle cancel button press"""
         self._destroy_frame(self.keyboard_page_frame)
         self._destroy_frame(self.review_frame)
