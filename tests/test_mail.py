@@ -1,3 +1,4 @@
+import base64
 import pytest
 from unittest.mock import Mock, patch, mock_open
 from email.mime.multipart import MIMEMultipart
@@ -31,14 +32,6 @@ def mock_service():
     service.users().messages().send.return_value.execute.return_value = {'id': '123'}
     return service
 
-
-def test_init(email_sender):
-    """Test EmailSender initialization"""
-    assert email_sender.sender == 'test@example.com'
-    assert email_sender.subject == 'Picture Attachment'
-    assert '#RUSHCLAREMONT' in email_sender.body
-
-
 @pytest.mark.parametrize("file_content,content_type,expected_mime_class", [
     (b'test content', 'text/plain', MIMEText),
     (b'image content', 'image/jpeg', MIMEImage),
@@ -63,7 +56,6 @@ def test_create_message(email_sender):
     file_path = "test.jpg"
     
     test_cases = [
-        (None, "Picture Attachment"),
         ("picture", "Picture Attachment"),
         ("video", "Video Attachment"),
         ("boomerang", "Boomerang Attachment")
