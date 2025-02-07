@@ -528,8 +528,7 @@ class UserInterface(ctk.CTkFrame):
         if index < len(frames):
             frame = frames[index]
             if isinstance(frame, Image.Image):
-                cv2image = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
-                img = Image.fromarray(cv2image)
+                img = frame
             else:
                 cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 img = Image.fromarray(cv2image)
@@ -578,9 +577,10 @@ class UserInterface(ctk.CTkFrame):
     def _display_frame(self, frame):
         """Display a single frame"""
         try:
-            frame_array = np.array(frame)
-            cv2image = cv2.cvtColor(frame_array, cv2.COLOR_BGR2RGB)  # Convert the frame to RGB format
-            img = Image.fromarray(cv2image)
+            if isinstance(frame, Image.Image):
+                img = frame
+            else:
+                img = Image.fromarray(frame)
             ctk_image = ctk.CTkImage(dark_image=img,
                                      size=(self.screen_width, int(self.screen_height * 0.9)))
             self.review_label.ctk_image = ctk_image
