@@ -245,7 +245,14 @@ class UserInterface(ctk.CTkFrame):
     def _handle_picture_capture(self, current_time, frame):
         """Handle picture capture timing and storage"""
         if current_time - self.timer_start > 3:
-            self.last_picture_frame = frame
+            camera_file = self.camera_manager.capture_picture()
+            count = FileManager.increment_count(MediaType.PICTURE)
+            self.media_path = FileManager.get_save_path(MediaType.PICTURE, count)
+            camera_file.save(self.media_path)
+            if self.media_path:
+                self.watermark.apply_picture_watermark(self.media_path)
+                # Load the watermarked image for review
+                self.last_picture_frame = Image.open(self.media_path)
 
         if current_time <= self.timer_end:
             self.preview_label.after(10, self.update_preview)
@@ -287,42 +294,17 @@ class UserInterface(ctk.CTkFrame):
 
     def _save_and_send(self) -> None:
         """Save media content and send email in background thread"""
-        count = FileManager.increment_count(self.pressed_button)
-        save_methods = {
-            MediaType.PICTURE: self._save_picture,
-            MediaType.BOOMERANG: self._save_boomerang,
-            MediaType.VIDEO: self._save_video
-        }
-        save_methods[self.pressed_button](count)
-        self.send_email()
+        if self.pressed_button == MediaType.PICTURE:
+            self.send_email()
+        else:
+            count = FileManager.increment_count(self.pressed_button)
+            save_methods = {
+                MediaType.BOOMERANG: self._save_boomerang,
+                MediaType.VIDEO: self._save_video
+            }
+            save_methods[self.pressed_button](count)
+            self.send_email()
 
-    def _save_picture(self, count: int) -> None:
-        """Save captured picture to disk with processing.
-        
-        Performs:
-        - Image format conversion (PIL -> OpenCV)
-        - Resolution scaling (1280x853)
-        - Watermark application
-        - File system metadata updates
-        
-        Args:
-            count (int): Media counter for unique filenames
-        """
-        if self.last_picture_frame is not None:
-            # Convert PIL Image to numpy array if it's a PIL Image
-            if isinstance(self.last_picture_frame, Image.Image):
-                # Convert PIL Image to numpy array
-                frame_array = np.array(self.last_picture_frame)
-                # Convert RGB to BGR (OpenCV format)
-                frame_array = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
-            else:
-                frame_array = self.last_picture_frame
-
-
-            resized_frame = cv2.resize(frame_array, (1280, 853))
-            self.media_path = FileManager.get_save_path(MediaType.PICTURE, count)
-            cv2.imwrite(filename=self.media_path, img=resized_frame)
-            self.watermark.apply_picture_watermark(accepted_picture_path=self.media_path)
 
     def _save_boomerang(self, count: int) -> None:
         """Save boomerang frames"""

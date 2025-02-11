@@ -207,3 +207,24 @@ class CanonCamera(Camera):
                     break
         except Exception as e:
             self.logger.warning(f"Error while resetting USB: {e}")
+
+    def capture_picture(self) -> Optional[str]:
+        """Capture picture directly to memory card using gphoto2"""
+        try:
+            if not self.is_initialized():
+                return None
+
+            # Capture image to camera's memory card
+            file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
+
+            # Get the file from camera
+            camera_file = self.camera.file_get(
+                file_path.folder,
+                file_path.name,
+                gp.GP_FILE_TYPE_NORMAL
+            )
+            return camera_file
+
+        except Exception as e:
+            self.logger.error(f"Failed to capture picture: {e}")
+            return None

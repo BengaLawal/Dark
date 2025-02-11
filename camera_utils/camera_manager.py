@@ -2,8 +2,13 @@ import cv2
 import numpy as np
 import time
 from PIL import Image
+
+from camera_utils.camera_canon import CanonCamera
 from camera_utils.camera_interface import Camera
 from typing import Tuple, List, Optional
+
+from file_manager import FileManager, MediaType
+
 
 class CameraManager:
     """Manager class to handle camera operations and processing"""
@@ -75,3 +80,20 @@ class CameraManager:
     def release_camera(self) -> None:
         """Release camera resources"""
         self.camera.release()
+
+    def capture_picture(self) -> Optional[Any]:
+        """Capture a single picture using camera's native capture"""
+        if isinstance(self.camera, CanonCamera):
+            return self.camera.capture_picture()
+        else:
+            # Fallback for other camera types
+            ret, frame = self.camera.capture_frame()
+            if not ret:
+                return None
+
+            count = FileManager.increment_count(MediaType.PICTURE)
+            target_path = FileManager.get_save_path(MediaType.PICTURE, count)
+
+            # Save the captured frame
+            cv2.imwrite(target_path, frame)
+            return target_path
