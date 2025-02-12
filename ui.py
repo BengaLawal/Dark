@@ -249,8 +249,7 @@ class UserInterface(ctk.CTkFrame):
             # Store raw file temporarily
             self.media_path = None  # Will be set when saving
             if camera_file:
-                count = FileManager.get_count(MediaType.PICTURE)
-                temp_path = FileManager.get_save_path(MediaType.PICTURE, count)
+                temp_path = FileManager.get_temp_path(MediaType.PICTURE)
                 camera_file.save(temp_path)
                 self.last_picture_frame = Image.open(temp_path)
 
@@ -455,13 +454,15 @@ class UserInterface(ctk.CTkFrame):
         self._destroy_frame(self.keyboard_page_frame)
         self._destroy_frame(self.review_frame)
         self._clear_media_buffers()
+        FileManager.cleanup_temp_files()
         self.home_page()
 
     def _clear_media_buffers(self):
-        """Clear all media buffers"""
+        """Clear all media buffers and temporary files"""
         self.last_picture_frame = None
         self.boomerang_frames = []
         self.video_frames = []
+        FileManager.cleanup_temp_files()
 
     # Helper Methods
     @staticmethod

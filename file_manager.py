@@ -16,6 +16,7 @@ class FileManager:
         MediaType.BOOMERANG: "saved_boomerangs",
         MediaType.VIDEO: "saved_videos"
     }
+    TEMP_DIR = "temp_media"
 
     @classmethod
     def initialize_counts_file(cls):
@@ -28,8 +29,8 @@ class FileManager:
             }
             cls._save_counts(default_counts)
 
-        # Ensure save directories exist
-        for directory in cls.SAVE_DIRS.values():
+        # Ensure save and temp directories exist
+        for directory in list(cls.SAVE_DIRS.values()) + [cls.TEMP_DIR]:
             os.makedirs(directory, exist_ok=True)
 
     @classmethod
@@ -61,6 +62,21 @@ class FileManager:
         """Save counts to JSON file"""
         with open(cls.COUNTS_FILE, 'w') as f:
             json.dump(counts, f)
+
+    @classmethod
+    def get_temp_path(cls, media_type):
+        """Get a temporary file path for a specific media type"""
+        extension = ".mp4" if media_type == MediaType.VIDEO else ".jpeg"
+        import uuid
+        return f"{cls.TEMP_DIR}/{uuid.uuid4()}{extension}"
+
+    @classmethod
+    def cleanup_temp_files(cls):
+        """Remove all temporary files"""
+        import shutil
+        if os.path.exists(cls.TEMP_DIR):
+            shutil.rmtree(cls.TEMP_DIR)
+            os.makedirs(cls.TEMP_DIR, exist_ok=True)
 
     @classmethod
     def get_save_path(cls, media_type, count):
