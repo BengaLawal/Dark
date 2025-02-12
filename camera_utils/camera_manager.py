@@ -5,7 +5,7 @@ from PIL import Image
 
 from camera_utils.camera_canon import CanonCamera
 from camera_utils.camera_interface import Camera
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Any
 
 from file_manager import FileManager, MediaType
 

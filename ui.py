@@ -246,13 +246,13 @@ class UserInterface(ctk.CTkFrame):
         """Handle picture capture timing and storage"""
         if current_time - self.timer_start > 3:
             camera_file = self.camera_manager.capture_picture()
-            count = FileManager.increment_count(MediaType.PICTURE)
-            self.media_path = FileManager.get_save_path(MediaType.PICTURE, count)
-            camera_file.save(self.media_path)
-            if self.media_path:
-                self.watermark.apply_picture_watermark(self.media_path)
-                # Load the watermarked image for review
-                self.last_picture_frame = Image.open(self.media_path)
+            # Store raw file temporarily
+            self.media_path = None  # Will be set when saving
+            if camera_file:
+                count = FileManager.get_count(MediaType.PICTURE)
+                temp_path = FileManager.get_save_path(MediaType.PICTURE, count)
+                camera_file.save(temp_path)
+                self.last_picture_frame = Image.open(temp_path)
 
         if current_time <= self.timer_end:
             self.preview_label.after(10, self.update_preview)
@@ -294,28 +294,47 @@ class UserInterface(ctk.CTkFrame):
 
     def _save_and_send(self) -> None:
         """Save media content and send email in background thread"""
-        if self.pressed_button == MediaType.PICTURE:
-            self.send_email()
-        else:
+        try:
             count = FileManager.increment_count(self.pressed_button)
+            self.media_path = FileManager.get_save_path(self.pressed_button, count)
+            
             save_methods = {
+                MediaType.PICTURE: self._save_picture,
                 MediaType.BOOMERANG: self._save_boomerang,
                 MediaType.VIDEO: self._save_video
             }
+            
+            # Save and watermark the media
             save_methods[self.pressed_button](count)
+            
+            # Apply watermark based on media type
+            if self.pressed_button == MediaType.PICTURE:
+                self.watermark.apply_picture_watermark(self.media_path)
+            else:
+                self.watermark.apply_video_watermark(self.media_path)
+                
+            # Send email only after watermarking is complete
             self.send_email()
+            
+        except Exception as e:
+            self.logger.error(f"Error in saving and sending media: {e}")
+        finally:
+            self.user_email = None
 
 
     def _save_boomerang(self, count: int) -> None:
         """Save boomerang frames"""
         pass  # Implement boomerang saving logic
 
+    def _save_picture(self, count: int) -> None:
+        """Save picture with final path"""
+        if self.last_picture_frame:
+            self.last_picture_frame.save(self.media_path)
+
     def _save_video(self, count: int) -> None:
         """Save video frames as MP4 using mp4v codec"""
         if not self.video_frames:
             return
-
-        self.media_path = FileManager.get_save_path(MediaType.VIDEO, count)
 
         try:
             # Get frame dimensions from first frame
@@ -367,7 +386,6 @@ class UserInterface(ctk.CTkFrame):
             if os.path.exists(self.media_path):
                 os.remove(self.media_path)
             raise
-        self.watermark.apply_video_watermark(self.media_path)
 
     def send_email(self) -> None:
         """Send captured media to user's email address.
