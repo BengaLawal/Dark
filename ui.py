@@ -1,9 +1,7 @@
 import os
-import cv2
 import time
 import logging
 import tkinter as tk
-import numpy as np
 import threading
 import customtkinter as ctk
 from PIL import Image
@@ -14,8 +12,6 @@ from CTkMessagebox import CTkMessagebox
 from typing import Union, Any, Optional, List
 from file_manager import FileManager, MediaType
 from camera_utils.camera_canon import CanonCamera
-from camera_utils.camera_manager import CameraManager
-
 
 class UserInterface(ctk.CTkFrame):
     """Main application interface for the photo booth system.
@@ -51,7 +47,6 @@ class UserInterface(ctk.CTkFrame):
         # UI components
         self.main_frame = None
         self.pressed_button = None
-        self.camera_manager = None
         self.preview_frame = None
         self.preview_label = None
         self.review_frame = None
@@ -61,6 +56,8 @@ class UserInterface(ctk.CTkFrame):
         self.timer_start = None
         self.timer_end = None
         self.timer_thread = None
+
+        self.camera = None
 
         # Media storage
         self.last_picture_frame = None
@@ -131,7 +128,7 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             self._handle_camera_error(str(e))
 
-    def review_page(self, media_content: Union[np.ndarray, List[np.ndarray]]) -> None:
+    def review_page(self, media_content: Union[Image.Image, List[Image.Image]]) -> None:
         """Display captured media for user review.
         
         Args:
@@ -177,10 +174,8 @@ class UserInterface(ctk.CTkFrame):
             RuntimeError: If camera initialization fails after retries
         """
         try:
-            camera = CanonCamera(logger=self.logger)
-            # camera = OpenCVCamera(logger=self.logger)
-            self.camera_manager = CameraManager(camera)
-            if not self.camera_manager.initialize_camera():
+            self.camera = CanonCamera(logger=self.logger)
+            if not self.camera.initialize():
                 raise RuntimeError("Failed to initialize camera after multiple attempts")
         except Exception as e:
             raise RuntimeError(f"Camera initialization failed: {str(e)}")
@@ -194,7 +189,7 @@ class UserInterface(ctk.CTkFrame):
         self.review_label = ctk.CTkLabel(self.review_frame, text="")
         self.review_label.grid(row=0, column=0, columnspan=3)
 
-    def _display_media_content(self, content: Union[np.ndarray, List[np.ndarray]]) -> None:
+    def _display_media_content(self, content: Union[Image.Image, List[Image.Image]]) -> None:
         """Display the appropriate media content based on type"""
         display_methods = {
             MediaType.PICTURE: lambda: self._display_frame(content),
@@ -216,7 +211,7 @@ class UserInterface(ctk.CTkFrame):
             CameraError: If frame capture fails consistently
         """
         try:
-            pil_image = self.camera_manager.capture_and_process_frame(
+            pil_image = self.camera.capture_and_process_frame(
                 preview_size=(int(self.preview_size), int(self.preview_size))
             )
             if pil_image is None:
@@ -233,7 +228,7 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             self.logger.error(f"Error in showing {self.pressed_button} frames: {e}")
 
-    def _handle_media_capture(self, current_time: float, frame: Union[Image.Image, np.ndarray]) -> None:
+    def _handle_media_capture(self, current_time: float, frame: Image.Image) -> None:
         """Handle media capture based on type"""
         capture_handlers = {
             MediaType.PICTURE: self._handle_picture_capture,
@@ -245,7 +240,7 @@ class UserInterface(ctk.CTkFrame):
     def _handle_picture_capture(self, current_time, frame):
         """Handle picture capture timing and storage"""
         if current_time - self.timer_start > 3:
-            camera_file = self.camera_manager.capture_picture()
+            camera_file = self.camera.capture_picture()
             # Store raw file temporarily
             self.media_path = None  # Will be set when saving
             if camera_file:
@@ -256,7 +251,7 @@ class UserInterface(ctk.CTkFrame):
         if current_time <= self.timer_end:
             self.preview_label.after(10, self.update_preview)
         else:
-            self.camera_manager.release_camera()
+            self.camera.release()
             self.review_page(self.last_picture_frame)
 
     def _handle_boomerang_capture(self, current_time, frame):
@@ -267,7 +262,7 @@ class UserInterface(ctk.CTkFrame):
         if current_time <= self.timer_end:
             self.preview_label.after(10, self.update_preview)
         else:
-            self.camera_manager.release_camera()
+            self.camera.release()
             self.arrange_boomerang_frames()
             self.review_page(self.boomerang_frames)
 
@@ -279,7 +274,7 @@ class UserInterface(ctk.CTkFrame):
         if current_time <= self.timer_end:
             self.preview_label.after(20, self.update_preview)
         else:
-            self.camera_manager.release_camera()
+            self.camera.release()
             self.review_page(self.video_frames)
 
     # Save and send functions
@@ -313,7 +308,7 @@ class UserInterface(ctk.CTkFrame):
                 self.watermark.apply_video_watermark(self.media_path)
                 
             # Send email only after watermarking is complete
-            self.send_email()
+            # self.send_email()
             
         except Exception as e:
             self.logger.error(f"Error in saving and sending media: {e}")
@@ -331,50 +326,20 @@ class UserInterface(ctk.CTkFrame):
             self.last_picture_frame.save(self.media_path)
 
     def _save_video(self, count: int) -> None:
-        """Save video frames as MP4 using mp4v codec"""
+        """Save video frames using moviepy"""
         if not self.video_frames:
             return
 
         try:
-            # Get frame dimensions from first frame
-            first_frame = self.video_frames[0]
-            if isinstance(first_frame, Image.Image):
-                frame = cv2.cvtColor(np.array(first_frame), cv2.COLOR_RGB2BGR)
-            else:
-                frame = first_frame
-
-            # Ensure dimensions are even
-            height, width = frame.shape[:2]
-            width = width if width % 2 == 0 else width - 1
-            height = height if height % 2 == 0 else height - 1
-
-            # Use mp4v codec
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            video_writer = cv2.VideoWriter(
-                filename=self.media_path,
-                fourcc=fourcc,
-                fps=30.0,
-                frameSize=(width, height),
-                isColor=True
-            )
-
-            if not video_writer.isOpened():
-                raise RuntimeError("Failed to initialize video writer")
-
-            # Write frames
-            for frame in self.video_frames:
-                if isinstance(frame, Image.Image):
-                    frame_array = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
-                else:
-                    frame_array = frame
-
-                # Ensure frame matches video dimensions
-                if frame_array.shape[:2] != (height, width):
-                    frame_array = cv2.resize(frame_array, (width, height))
-
-                video_writer.write(frame_array)
-
-            video_writer.release()
+            from moviepy.editor import ImageSequenceClip
+            import numpy as np
+            
+            # Convert frames to numpy arrays
+            frame_arrays = [np.array(frame) for frame in self.video_frames]
+            
+            # Create and write video
+            clip = ImageSequenceClip(frame_arrays, fps=30)
+            clip.write_videofile(self.media_path, codec='libx264', fps=30)
 
             # Verify the file was created
             if not os.path.exists(self.media_path) or os.path.getsize(self.media_path) == 0:
@@ -528,11 +493,7 @@ class UserInterface(ctk.CTkFrame):
         """Play video frames sequentially"""
         if index < len(frames):
             frame = frames[index]
-            if isinstance(frame, Image.Image):
-                img = frame
-            else:
-                cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img = Image.fromarray(cv2image)
+            img = frame  # frame is already a PIL Image
             ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, int(self.screen_height * 0.9)))
             self.review_label.ctk_image = ctk_image
             self.review_label.configure(image=ctk_image)

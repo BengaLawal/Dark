@@ -1,9 +1,7 @@
 import os
 import io
-import cv2
 import time
 import subprocess
-import numpy as np
 import gphoto2 as gp
 from PIL import Image
 from typing import Tuple, Optional
@@ -58,21 +56,16 @@ class CanonCamera(Camera):
             self._initialized = False
             return False
 
-    def capture_frame(self) -> Tuple[bool, Optional[np.ndarray]]:
-        """Capture a frame from the Canon camera"""
+    def capture_frame(self) -> Tuple[bool, Optional[Image.Image]]:
+        """Capture a preview frame as PIL Image"""
         if not self.is_initialized():
             return False, None
 
         try:
-            # If we're recording video, return the preview frame
             preview_file = self.camera.capture_preview()
             preview_data = preview_file.get_data_and_size()
-
             image = Image.open(io.BytesIO(preview_data))
-            frame = np.array(image)
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-            return True, frame_bgr
+            return True, image
 
         except Exception as e:
             self.logger.error(f"Failed to capture frame: {e}")
@@ -228,3 +221,13 @@ class CanonCamera(Camera):
         except Exception as e:
             self.logger.error(f"Failed to capture picture: {e}")
             return None
+
+    def capture_and_process_frame(self, preview_size: Optional[Tuple[int, int]] = None) -> Optional[Image.Image]:
+        """Capture and optionally resize a preview frame"""
+        ret, image = self.capture_frame()
+        if not ret or image is None:
+            return None
+
+        if preview_size:
+            image = image.resize(preview_size)
+        return image
