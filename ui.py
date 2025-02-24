@@ -292,7 +292,7 @@ class UserInterface(ctk.CTkFrame):
             self.video_frames.append(frame)
 
         if current_time <= self.timer_end:
-            self.preview_label.after(20, self.update_preview)
+            self.preview_label.after(33, self.update_preview)
         else:
             self.camera.release()
             self.review_page(self.video_frames)
@@ -359,7 +359,7 @@ class UserInterface(ctk.CTkFrame):
             
             # Create and write video
             clip = ImageSequenceClip(frame_arrays, fps=30)
-            clip.write_videofile(self.media_path, codec='libx264', fps=30)
+            clip.write_videofile(self.media_path, codec='libx264', fps=30, threads=4, preset='ultrafast')
 
             # Verify the file was created
             if not os.path.exists(self.media_path) or os.path.getsize(self.media_path) == 0:
@@ -511,13 +511,16 @@ class UserInterface(ctk.CTkFrame):
 
     def play_video_frame(self, frames, index):
         """Play video frames sequentially"""
+        if not frames:
+            return
+
         if index < len(frames):
             frame = frames[index]
             img = frame  # frame is already a PIL Image
             ctk_image = ctk.CTkImage(dark_image=img, size=(self.screen_width, int(self.screen_height * 0.9)))
             self.review_label.ctk_image = ctk_image
             self.review_label.configure(image=ctk_image)
-            self.review_label.after(15, self.play_video_frame, frames, index + 1)
+            self.review_label.after(33, self.play_video_frame, frames, index + 1)
 
     def _create_home_page_buttons(self, button_data):
         """Create home page buttons"""
