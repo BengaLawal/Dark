@@ -2,6 +2,8 @@ import os
 import time
 import logging
 import tkinter as tk
+import tempfile
+import subprocess
 import threading
 import customtkinter as ctk
 from PIL import Image
@@ -269,7 +271,7 @@ class UserInterface(ctk.CTkFrame):
                 self.last_picture_frame = Image.open(temp_path)
 
         if current_time <= self.timer_end:
-            self.preview_label.after(10, self.update_preview)
+            self.preview_label.after(33, self.update_preview)
         else:
             self.camera.release()
             self.review_page(self.last_picture_frame)
@@ -280,7 +282,7 @@ class UserInterface(ctk.CTkFrame):
             self.boomerang_frames.append(frame)
 
         if current_time <= self.timer_end:
-            self.preview_label.after(10, self.update_preview)
+            self.preview_label.after(33, self.update_preview)
         else:
             self.camera.release()
             self.arrange_boomerang_frames()
@@ -319,7 +321,7 @@ class UserInterface(ctk.CTkFrame):
             }
             
             # Save and watermark the media
-            save_methods[self.pressed_button](count)
+            save_methods[self.pressed_button]()
             
             # Apply watermark based on media type
             if self.pressed_button == MediaType.PICTURE:
@@ -335,17 +337,46 @@ class UserInterface(ctk.CTkFrame):
         finally:
             self.user_email = None
 
+    def _save_boomerang(self) -> None:
+        """Save boomerang frames using FFmpeg"""
+        try:
+            if not self.boomerang_frames:
+                return
 
-    def _save_boomerang(self, count: int) -> None:
-        """Save boomerang frames"""
-        pass  # Implement boomerang saving logic
+            # Create a temporary directory
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save frames as individual images
+                for i, frame in enumerate(self.boomerang_frames):
+                    frame_path = os.path.join(temp_dir, f"frame_{i:04d}.jpg")
+                    frame.save(frame_path)
 
-    def _save_picture(self, count: int) -> None:
+                # Use FFmpeg to create the boomerang effect directly
+                subprocess.run([
+                    'ffmpeg', '-y', '-framerate', '30',
+                    '-i', os.path.join(temp_dir, 'frame_%04d.jpg'),
+                    '-filter_complex', "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[v];[v]setpts=0.5*PTS[outv]",
+                    '-map', "[outv]", '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-preset', 'ultrafast', self.media_path
+                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                # Verify the file was created
+                if not os.path.exists(self.media_path) or os.path.getsize(self.media_path) == 0:
+                    raise RuntimeError("Boomerang video file was not created successfully")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save boomerang video: {e}")
+            if os.path.exists(self.media_path):
+                os.remove(self.media_path)
+            raise
+
+
+
+    def _save_picture(self) -> None:
         """Save picture with final path"""
         if self.last_picture_frame:
             self.last_picture_frame.save(self.media_path)
 
-    def _save_video(self, count: int) -> None:
+    def _save_video(self) -> None:
         """Save video frames using moviepy"""
         if not self.video_frames:
             return
@@ -501,13 +532,54 @@ class UserInterface(ctk.CTkFrame):
             self.timer_label.after(0, self.timer_label.destroy())
 
     def arrange_boomerang_frames(self):
-        """Arrange frames for boomerang effect"""
-        collected_frames = self.boomerang_frames
-        complete_boomerang = []
-        for i in range(3):
-            frames = collected_frames if i % 2 == 0 else collected_frames[::-1]
-            complete_boomerang.extend(frames)
-        self.boomerang_frames = complete_boomerang
+        """Process frames to create boomerang effect using FFmpeg"""
+        try:
+            import tempfile
+            import subprocess
+            from moviepy.editor import VideoFileClip
+
+            # Create a temporary directory to store frames
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save collected frames as images
+                for i, frame in enumerate(self.boomerang_frames):
+                    frame_path = os.path.join(temp_dir, f"frame_{i:04d}.jpg")
+                    frame.save(frame_path)
+
+                # Create temporary output path for the boomerang video
+                output_path = os.path.join(temp_dir, "boomerang.mp4")
+
+                # Create boomerang effect directly from image sequence without intermediate video
+                subprocess.run([
+                    'ffmpeg', '-y', '-framerate', '30',
+                    '-i', os.path.join(temp_dir, 'frame_%04d.jpg'),
+                    '-filter_complex', "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[v];[v]setpts=0.5*PTS[outv]",
+                    '-map', "[outv]", '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-preset', 'ultrafast', output_path
+                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                # Load processed video back as frames
+                video = VideoFileClip(output_path)
+                fps = video.fps
+                duration = video.duration
+                frame_count = int(fps * duration)
+
+                # Extract frames from processed video
+                self.boomerang_frames = []
+                for i in range(frame_count):
+                    time = i / fps
+                    img = video.get_frame(time)
+                    pil_img = Image.fromarray(img)
+                    self.boomerang_frames.append(pil_img)
+
+        except Exception as e:
+            self.logger.error(f"Error processing boomerang with FFmpeg: {e}")
+            # Fallback to the simple frame reversal if FFmpeg fails
+            collected_frames = self.boomerang_frames
+            complete_boomerang = []
+            for i in range(3):
+                frames = collected_frames if i % 2 == 0 else collected_frames[::-1]
+                complete_boomerang.extend(frames)
+            self.boomerang_frames = complete_boomerang
 
     def play_video_frame(self, frames, index):
         """Play video frames sequentially"""

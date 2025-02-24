@@ -4,7 +4,9 @@ Pillow==11.1.0
 keyboard~=0.13.5
 gphoto2~=2.5.0
 moviepy~=1.0.3
-numpy==2.2.2
+numpy>=1.24.0,<2.0.0
+ffmpeg-python>=0.2.0
+imageio-ffmpeg>=0.4.8
 opencv-python~=4.10.0.82
 CTkMessagebox~=2.0
 py3dns~=4.0.2

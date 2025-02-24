@@ -66,7 +66,7 @@ class FileManager:
     @classmethod
     def get_temp_path(cls, media_type):
         """Get a temporary file path for a specific media type"""
-        extension = ".mp4" if media_type == MediaType.VIDEO else ".jpeg"
+        extension = ".mp4" if media_type == MediaType.VIDEO or MediaType.BOOMERANG else ".jpeg"
         import uuid
         return f"{cls.TEMP_DIR}/{uuid.uuid4()}{extension}"
 
@@ -81,5 +81,5 @@ class FileManager:
     @classmethod
     def get_save_path(cls, media_type, count):
         """Get the save path for a specific media type and count"""
-        extension = ".mp4" if media_type == MediaType.VIDEO else ".jpeg"
+        extension = ".mp4" if media_type == MediaType.VIDEO or MediaType.BOOMERANG else ".jpeg"
         return f"{cls.SAVE_DIRS[media_type]}/{count}{extension}"
