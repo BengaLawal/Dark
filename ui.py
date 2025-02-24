@@ -123,6 +123,19 @@ class UserInterface(ctk.CTkFrame):
             self._destroy_frame(self.main_frame)
             self._setup_preview_frame()
             self._initialize_camera()
+
+            if not self._wait_for_camera_ready():
+                raise RuntimeError("Camera not ready after initialization")
+
+            initial_frame = self.camera.capture_and_process_frame(
+                preview_size=(int(self.preview_size), int(self.preview_size))
+            )
+            if initial_frame:
+                ctk_image = ctk.CTkImage(dark_image=initial_frame,
+                                         size=(self.preview_size, self.preview_size))
+                self.preview_label.configure(image=ctk_image)
+                self.preview_label.ctk_image = ctk_image
+
             self._start_timer()
             self.logger.info("Preview page initialized")
         except Exception as e:
@@ -215,7 +228,13 @@ class UserInterface(ctk.CTkFrame):
                 preview_size=(int(self.preview_size), int(self.preview_size))
             )
             if pil_image is None:
-                raise ValueError("Failed to capture video")
+                # Try to recover camera
+                if self.camera.is_initialized():
+                    self.camera.release()
+                self._initialize_camera()
+                if not self._wait_for_camera_ready():
+                    raise ValueError("Failed to recover camera preview")
+                return
 
             ctk_image = ctk.CTkImage(dark_image=pil_image,
                                    size=(self.preview_size, self.preview_size))
@@ -227,6 +246,7 @@ class UserInterface(ctk.CTkFrame):
 
         except Exception as e:
             self.logger.error(f"Error in showing {self.pressed_button} frames: {e}")
+            self._handle_camera_error(f"Preview failed: {e}")
 
     def _handle_media_capture(self, current_time: float, frame: Image.Image) -> None:
         """Handle media capture based on type"""
@@ -308,7 +328,7 @@ class UserInterface(ctk.CTkFrame):
                 self.watermark.apply_video_watermark(self.media_path)
                 
             # Send email only after watermarking is complete
-            # self.send_email()
+            self.send_email()
             
         except Exception as e:
             self.logger.error(f"Error in saving and sending media: {e}")
@@ -549,3 +569,26 @@ class UserInterface(ctk.CTkFrame):
             self.review_label.configure(image=ctk_image)
         except Exception as e:
             self.logger.error(f"Error in displaying frame: {e}")
+
+    def _wait_for_camera_ready(self) -> bool:
+        """Wait for camera to be fully initialized and able to capture frames.
+
+        Returns:
+            bool: True if camera is ready, False if timeout or error
+        """
+        max_attempts = 4
+        delay = 0.5  # half second between attempts
+
+        for _ in range(max_attempts):
+            try:
+                # Try to capture a test frame
+                test_frame = self.camera.capture_and_process_frame(
+                    preview_size=(int(self.preview_size), int(self.preview_size))
+                )
+                if test_frame is not None:
+                    return True
+            except Exception as e:
+                self.logger.warning(f"Camera not yet ready: {e}")
+            time.sleep(delay)
+
+        return False
