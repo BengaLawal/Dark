@@ -16,8 +16,6 @@ class CanonCamera(Camera):
         self.context = None
         self.logger = logger.getChild(self.__class__.__name__)
         self._initialized = False
-        self._recording = False
-        self.video_start_time = None
 
     def initialize(self) -> bool:
         """Initialize the Canon camera using gphoto2"""
@@ -71,75 +69,8 @@ class CanonCamera(Camera):
             self.logger.error(f"Failed to capture frame: {e}")
             return False, None
 
-    def start_video_recording(self) -> bool:
-        """Start video recording on the camera"""
-        try:
-            config = self.camera.get_config()
-            movie_record = config.get_child_by_name('movie')
-            movie_record.set_value(1)
-            self.camera.set_config(config)
-            self._recording = True
-            self.video_start_time = time.time()
-            self.logger.info("Started video recording on Canon camera")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to start video recording: {e}")
-            return False
-
-    def stop_video_recording(self) -> Optional[str]:
-        """Stop video recording and return the video file path"""
-        if not self._recording:
-            return None
-
-        try:
-            config = self.camera.get_config()
-            movie_record = config.get_child_by_name('movie')
-            movie_record.set_value(0)
-            self.camera.set_config(config)
-
-            # Wait briefly for the camera to finish writing
-            time.sleep(2)
-
-            # Get the latest video file
-            folder_list = self.camera.folder_list_files('/')
-            video_files = [f for f in folder_list if f.lower().endswith(('.mp4', '.mov'))]
-            if video_files:
-                latest_video = video_files[-1]
-
-                # Download the video file
-                camera_file = self.camera.file_get(
-                    '/',
-                    latest_video,
-                    gp.GP_FILE_TYPE_NORMAL
-                )
-
-                # Save to local storage
-                local_path = f"./videos/{latest_video}"
-                camera_file.save(local_path)
-
-                self._recording = False
-                return local_path
-
-        except Exception as e:
-            self.logger.error(f"Failed to stop video recording: {e}")
-
-        self._recording = False
-        return None
-
-    def is_recording(self) -> bool:
-        """Check if currently recording video"""
-        return self._recording
-
-    def get_recording_duration(self) -> float:
-        """Get current recording duration in seconds"""
-        if not self._recording or self.video_start_time is None:
-            return 0.0
-        return time.time() - self.video_start_time
-
     def release(self) -> None:
         """Release Canon camera resources"""
-        if self._recording:
-            self.stop_video_recording()
         if self.camera:
             self.camera.exit()
             self.camera = None

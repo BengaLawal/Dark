@@ -14,6 +14,8 @@ from CTkMessagebox import CTkMessagebox
 from typing import Union, Any, Optional, List
 from file_manager import FileManager, MediaType
 from camera_utils.camera_canon import CanonCamera
+from moviepy import ImageSequenceClip, VideoFileClip
+import numpy as np
 
 class UserInterface(ctk.CTkFrame):
     """Main application interface for the photo booth system.
@@ -103,7 +105,7 @@ class UserInterface(ctk.CTkFrame):
             button_data = [
                 {"image_path": "./button_images/picture.png", "media_type": MediaType.PICTURE},
                 {"image_path": "./button_images/boomerang.png", "media_type": MediaType.BOOMERANG},
-                {"image_path": "./button_images/video.png", "media_type": MediaType.VIDEO},
+                # {"image_path": "./button_images/video.png", "media_type": MediaType.VIDEO},
             ]
             self._create_home_page_buttons(button_data)
         except Exception as e:
@@ -319,7 +321,7 @@ class UserInterface(ctk.CTkFrame):
                 MediaType.BOOMERANG: self._save_boomerang,
                 MediaType.VIDEO: self._save_video
             }
-            
+
             # Save and watermark the media
             save_methods[self.pressed_button]()
             
@@ -352,11 +354,19 @@ class UserInterface(ctk.CTkFrame):
 
                 # Use FFmpeg to create the boomerang effect directly
                 subprocess.run([
-                    'ffmpeg', '-y', '-framerate', '30',
+                    'ffmpeg', '-y',
+                    '-framerate', '30',
                     '-i', os.path.join(temp_dir, 'frame_%04d.jpg'),
                     '-filter_complex', "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[v];[v]setpts=0.5*PTS[outv]",
-                    '-map', "[outv]", '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-                    '-preset', 'ultrafast', self.media_path
+                    '-map', "[outv]",
+                    '-c:v', 'libx264',
+                    '-profile:v', 'high',
+                    '-level', '4.2',
+                    '-pix_fmt', 'yuv420p',
+                    '-movflags', '+faststart',
+                    '-f', 'mp4',
+                    '-an',
+                    self.media_path
                 ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
                 # Verify the file was created
@@ -373,28 +383,61 @@ class UserInterface(ctk.CTkFrame):
 
     def _save_picture(self) -> None:
         """Save picture with final path"""
+        print(self.pressed_button)
+        print(self.media_path)
         if self.last_picture_frame:
             self.last_picture_frame.save(self.media_path)
 
     def _save_video(self) -> None:
-        """Save video frames using moviepy"""
+        """Save video frames using FFmpeg directly for H.264 encoding"""
         if not self.video_frames:
             return
 
         try:
-            from moviepy.editor import ImageSequenceClip
-            import numpy as np
-            
-            # Convert frames to numpy arrays
-            frame_arrays = [np.array(frame) for frame in self.video_frames]
-            
-            # Create and write video
-            clip = ImageSequenceClip(frame_arrays, fps=30)
-            clip.write_videofile(self.media_path, codec='libx264', fps=30, threads=4, preset='ultrafast')
+            # Create temporary directory for frames
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save frames as individual images
+                for i, frame in enumerate(self.video_frames):
+                    frame_path = os.path.join(temp_dir, f"frame_{i:04d}.jpg")
+                    frame.save(frame_path)
 
-            # Verify the file was created
-            if not os.path.exists(self.media_path) or os.path.getsize(self.media_path) == 0:
-                raise RuntimeError("Video file was not created successfully")
+                # Use FFmpeg directly to create H.264 video
+                ffmpeg_cmd = [
+                    'ffmpeg', '-y',
+                    '-framerate', '30',
+                    '-i', os.path.join(temp_dir, 'frame_%04d.jpg'),
+                    '-f', 'mp4',  # Force MP4 container
+                    '-vcodec', 'libx264',
+                    '-profile:v', 'high', '-level', '4.2',
+                    '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an',
+                    self.media_path
+                ]
+                # Run the command and capture output for debugging
+                result = subprocess.run(
+                    ffmpeg_cmd,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+
+                # Log the ffmpeg output for debugging
+                self.logger.info(f"FFmpeg stdout: {result.stdout}")
+                self.logger.info(f"FFmpeg stderr: {result.stderr}")
+
+                # Verify the file was created and is correct format
+                if not os.path.exists(self.media_path) or os.path.getsize(self.media_path) == 0:
+                    raise RuntimeError("Video file was not created successfully")
+
+                # Run ffprobe to verify encoding
+                probe_cmd = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                             '-show_entries', 'stream=codec_name', '-of', 'csv=p=0',
+                             self.media_path]
+                codec = subprocess.run(probe_cmd, capture_output=True, text=True).stdout.strip()
+
+                if codec != 'h264':
+                    self.logger.error(f"Expected h264 codec but got {codec}")
+                    raise RuntimeError(f"Expected h264 codec but got {codec}")
 
         except Exception as e:
             self.logger.error(f"Failed to save video: {e}")
@@ -534,10 +577,6 @@ class UserInterface(ctk.CTkFrame):
     def arrange_boomerang_frames(self):
         """Process frames to create boomerang effect using FFmpeg"""
         try:
-            import tempfile
-            import subprocess
-            from moviepy.editor import VideoFileClip
-
             # Create a temporary directory to store frames
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Save collected frames as images
@@ -553,8 +592,16 @@ class UserInterface(ctk.CTkFrame):
                     'ffmpeg', '-y', '-framerate', '30',
                     '-i', os.path.join(temp_dir, 'frame_%04d.jpg'),
                     '-filter_complex', "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[v];[v]setpts=0.5*PTS[outv]",
-                    '-map', "[outv]", '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-                    '-preset', 'ultrafast', output_path
+                    '-map', "[outv]",
+                    '-c:v', 'libx264',
+                    '-profile:v', 'high',
+                    '-level', '4.2',
+                    '-pix_fmt', 'yuv420p',
+                    '-movflags', '+faststart',
+                    '-preset', 'ultrafast',
+                    '-f', 'mp4',
+                    '-an',
+                    output_path
                 ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
                 # Load processed video back as frames
@@ -574,12 +621,13 @@ class UserInterface(ctk.CTkFrame):
         except Exception as e:
             self.logger.error(f"Error processing boomerang with FFmpeg: {e}")
             # Fallback to the simple frame reversal if FFmpeg fails
-            collected_frames = self.boomerang_frames
-            complete_boomerang = []
-            for i in range(3):
-                frames = collected_frames if i % 2 == 0 else collected_frames[::-1]
-                complete_boomerang.extend(frames)
-            self.boomerang_frames = complete_boomerang
+            # collected_frames = self.boomerang_frames
+            # complete_boomerang = []
+            # for i in range(3):
+            #     frames = collected_frames if i % 2 == 0 else collected_frames[::-1]
+            #     complete_boomerang.extend(frames)
+            # self.boomerang_frames = complete_boomerang
+            raise
 
     def play_video_frame(self, frames, index):
         """Play video frames sequentially"""
@@ -596,7 +644,7 @@ class UserInterface(ctk.CTkFrame):
 
     def _create_home_page_buttons(self, button_data):
         """Create home page buttons"""
-        button_width = int(self.screen_width / 6)
+        button_width = int(self.screen_width / 3)
         button_height = int(self.screen_height / 5)
 
         for i, data in enumerate(button_data):

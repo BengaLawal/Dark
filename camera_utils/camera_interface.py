@@ -27,46 +27,6 @@ class Camera(ABC):
         pass
 
     @abstractmethod
-    def start_video_recording(self) -> bool:
-        """
-        Start recording video
-
-        Returns:
-            bool: True if recording started successfully, False otherwise
-        """
-        pass
-
-    @abstractmethod
-    def stop_video_recording(self) -> Optional[str]:
-        """
-        Stop video recording
-
-        Returns:
-            Optional[str]: Path to the recorded video file if successful, None otherwise
-        """
-        pass
-
-    @abstractmethod
-    def is_recording(self) -> bool:
-        """
-        Check if camera is currently recording
-
-        Returns:
-            bool: True if recording is in progress, False otherwise
-        """
-        pass
-
-    @abstractmethod
-    def get_recording_duration(self) -> float:
-        """
-        Get the duration of the current recording
-
-        Returns:
-            float: Duration in seconds, 0.0 if not recording
-        """
-        pass
-
-    @abstractmethod
     def release(self) -> None:
         """Release camera resources"""
         pass
